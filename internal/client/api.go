@@ -66,7 +66,7 @@ func Get[T any](ctx context.Context, c *Client, plural, id string) (*T, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer drainAndClose(resp)
 	var out T
 	if err := jsonapi.UnmarshalPayload(resp.Body, &out); err != nil {
 		return nil, fmt.Errorf("decoding %s %s: %w", plural, id, err)
@@ -95,7 +95,7 @@ func List[T any](ctx context.Context, c *Client, plural string, opts ListOptions
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer drainAndClose(resp)
 	return decodeList[T](resp, plural+" list")
 }
 
@@ -107,7 +107,7 @@ func Search[T any](ctx context.Context, c *Client, plural, q string) ([]*T, erro
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer drainAndClose(resp)
 	return decodeList[T](resp, plural+" search")
 }
 
@@ -123,7 +123,7 @@ func Create[T any](ctx context.Context, c *Client, plural string, entity *T) (*T
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer drainAndClose(resp)
 	var out T
 	if err := jsonapi.UnmarshalPayload(resp.Body, &out); err != nil {
 		return nil, fmt.Errorf("decoding created %s: %w", plural, err)
@@ -144,7 +144,7 @@ func Patch[T any](ctx context.Context, c *Client, plural, id string, fields map[
 	if err != nil {
 		return nil, WriteDisposition{}, err
 	}
-	defer resp.Body.Close()
+	defer drainAndClose(resp)
 
 	if resp.StatusCode == 202 {
 		var submitted struct {

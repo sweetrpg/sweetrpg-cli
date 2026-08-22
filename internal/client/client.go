@@ -101,10 +101,17 @@ func (c *Client) do(ctx context.Context, method string, u *url.URL, body io.Read
 		return nil, err
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		defer resp.Body.Close()
+		defer drainAndClose(resp)
 		return nil, apiErrorFrom(resp)
 	}
 	return resp, nil
+}
+
+// drainAndClose reads any remaining body bytes so the connection is reusable
+// and closes it. Close errors are irrelevant once the response is consumed.
+func drainAndClose(resp *http.Response) {
+	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 1<<20))
+	_ = resp.Body.Close()
 }
 
 func apiErrorFrom(resp *http.Response) error {
