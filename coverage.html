@@ -57,9 +57,15 @@
 				
 				<option value="file0">github.com/sweetrpg/catalog-cli/cmd/sweetrpg-catalog/main.go (0.0%)</option>
 				
-				<option value="file1">github.com/sweetrpg/catalog-cli/internal/cmd/root.go (0.0%)</option>
+				<option value="file1">github.com/sweetrpg/catalog-cli/internal/client/api.go (84.5%)</option>
 				
-				<option value="file2">github.com/sweetrpg/catalog-cli/internal/config/config.go (97.1%)</option>
+				<option value="file2">github.com/sweetrpg/catalog-cli/internal/client/client.go (77.8%)</option>
+				
+				<option value="file3">github.com/sweetrpg/catalog-cli/internal/client/entities.go (100.0%)</option>
+				
+				<option value="file4">github.com/sweetrpg/catalog-cli/internal/cmd/root.go (0.0%)</option>
+				
+				<option value="file5">github.com/sweetrpg/catalog-cli/internal/config/config.go (97.1%)</option>
 				
 				</select>
 			</div>
@@ -97,7 +103,367 @@ func main() <span class="cov0" title="0">{
 }
 </pre>
 		
-		<pre class="file" id="file1" style="display: none">package cmd
+		<pre class="file" id="file1" style="display: none">package client
+
+import (
+        "context"
+        "encoding/json"
+        "fmt"
+        "net/http"
+        "net/url"
+        "reflect"
+
+        jsonapi "github.com/google/jsonapi"
+)
+
+// Filter is one equality filter: filter[field]=v1,v2 on the wire. catalog-api
+// maps these to Mongo $eq/$in queries.
+type Filter struct {
+        Field  string
+        Values []string
+}
+
+// ListOptions narrows a list request.
+type ListOptions struct {
+        Filters []Filter
+        Start   int
+        Limit   int
+}
+
+func (o ListOptions) query() url.Values <span class="cov4" title="2">{
+        q := url.Values{}
+        for _, f := range o.Filters </span><span class="cov1" title="1">{
+                q.Set(fmt.Sprintf("filter[%s]", f.Field), joinValues(f.Values))
+        }</span>
+        <span class="cov4" title="2">if o.Start &gt; 0 </span><span class="cov1" title="1">{
+                q.Set("page[start]", fmt.Sprint(o.Start))
+        }</span>
+        <span class="cov4" title="2">if o.Limit &gt; 0 </span><span class="cov1" title="1">{
+                q.Set("page[limit]", fmt.Sprint(o.Limit))
+        }</span>
+        <span class="cov4" title="2">return q</span>
+}
+
+func joinValues(values []string) string <span class="cov1" title="1">{
+        out := ""
+        for i, v := range values </span><span class="cov4" title="2">{
+                if i &gt; 0 </span><span class="cov1" title="1">{
+                        out += ","
+                }</span>
+                <span class="cov4" title="2">out += v</span>
+        }
+        <span class="cov1" title="1">return out</span>
+}
+
+// WriteDisposition reports how the server treated a patch: applied live, or
+// recorded as a proposed change awaiting review.
+type WriteDisposition struct {
+        Submitted bool
+        Version   int
+        State     string
+        Message   string
+}
+
+// Get fetches one entity by ID into out (a *vo.X). A 404 yields an *APIError
+// with StatusCode 404 (see IsNotFound).
+func Get[T any](ctx context.Context, c *Client, plural, id string) (*T, error) <span class="cov10" title="5">{
+        resp, err := c.do(ctx, "GET", c.buildURL(plural, "/"+id, nil), nil, "")
+        if err != nil </span><span class="cov7" title="3">{
+                return nil, err
+        }</span>
+        <span class="cov4" title="2">defer drainAndClose(resp)
+        var out T
+        if err := jsonapi.UnmarshalPayload(resp.Body, &amp;out); err != nil </span><span class="cov0" title="0">{
+                return nil, fmt.Errorf("decoding %s %s: %w", plural, id, err)
+        }</span>
+        <span class="cov4" title="2">return &amp;out, nil</span>
+}
+
+// decodeList reads a JSON:API collection document into a typed slice. The
+// result is never nil; an empty page is an empty slice.
+func decodeList[T any](resp *http.Response, what string) ([]*T, error) <span class="cov7" title="3">{
+        models, err := jsonapi.UnmarshalManyPayload(resp.Body, reflect.TypeOf((*T)(nil)))
+        if err != nil </span><span class="cov0" title="0">{
+                return nil, fmt.Errorf("decoding %s: %w", what, err)
+        }</span>
+        <span class="cov7" title="3">out := make([]*T, 0, len(models))
+        for _, m := range models </span><span class="cov4" title="2">{
+                out = append(out, m.(*T))
+        }</span>
+        <span class="cov7" title="3">return out, nil</span>
+}
+
+// List fetches entities matching opts. The result is never nil; an empty page
+// is an empty slice.
+func List[T any](ctx context.Context, c *Client, plural string, opts ListOptions) ([]*T, error) <span class="cov4" title="2">{
+        resp, err := c.do(ctx, "GET", c.buildURL(plural, "", opts.query()), nil, "")
+        if err != nil </span><span class="cov0" title="0">{
+                return nil, err
+        }</span>
+        <span class="cov4" title="2">defer drainAndClose(resp)
+        return decodeList[T](resp, plural+" list")</span>
+}
+
+// Search hits the type's /search endpoint. Only Searchable entity types
+// support it.
+func Search[T any](ctx context.Context, c *Client, plural, q string) ([]*T, error) <span class="cov1" title="1">{
+        query := url.Values{"q": {q}}
+        resp, err := c.do(ctx, "GET", c.buildURL(plural, "/search", query), nil, "")
+        if err != nil </span><span class="cov0" title="0">{
+                return nil, err
+        }</span>
+        <span class="cov1" title="1">defer drainAndClose(resp)
+        return decodeList[T](resp, plural+" search")</span>
+}
+
+// Create posts the entity as plain JSON (catalog-api binds VOs directly, not
+// as JSON:API requests) and returns the created record from the JSON:API
+// response document.
+func Create[T any](ctx context.Context, c *Client, plural string, entity *T) (*T, error) <span class="cov4" title="2">{
+        body, err := sendJSON(entity)
+        if err != nil </span><span class="cov0" title="0">{
+                return nil, err
+        }</span>
+        <span class="cov4" title="2">resp, err := c.do(ctx, "POST", c.buildURL(plural, "", nil), body, "application/json")
+        if err != nil </span><span class="cov1" title="1">{
+                return nil, err
+        }</span>
+        <span class="cov1" title="1">defer drainAndClose(resp)
+        var out T
+        if err := jsonapi.UnmarshalPayload(resp.Body, &amp;out); err != nil </span><span class="cov0" title="0">{
+                return nil, fmt.Errorf("decoding created %s: %w", plural, err)
+        }</span>
+        <span class="cov1" title="1">return &amp;out, nil</span>
+}
+
+// Patch sends flat field updates ({name: "...", tags: [...]}) and returns the
+// live record plus how the server disposed of the change. When disposition.
+// Submitted is true the live record is nil and Version/State/Message describe
+// the proposed change.
+func Patch[T any](ctx context.Context, c *Client, plural, id string, fields map[string]any) (*T, WriteDisposition, error) <span class="cov4" title="2">{
+        body, err := sendJSON(fields)
+        if err != nil </span><span class="cov0" title="0">{
+                return nil, WriteDisposition{}, err
+        }</span>
+        <span class="cov4" title="2">resp, err := c.do(ctx, "PATCH", c.buildURL(plural, "/"+id, nil), body, "application/json")
+        if err != nil </span><span class="cov0" title="0">{
+                return nil, WriteDisposition{}, err
+        }</span>
+        <span class="cov4" title="2">defer drainAndClose(resp)
+
+        if resp.StatusCode == 202 </span><span class="cov1" title="1">{
+                var submitted struct {
+                        Version int    `json:"version"`
+                        State   string `json:"state"`
+                        Message string `json:"message"`
+                }
+                if err := json.NewDecoder(resp.Body).Decode(&amp;submitted); err != nil </span><span class="cov0" title="0">{
+                        return nil, WriteDisposition{}, fmt.Errorf("decoding submission response: %w", err)
+                }</span>
+                <span class="cov1" title="1">return nil, WriteDisposition{Submitted: true, Version: submitted.Version, State: submitted.State, Message: submitted.Message}, nil</span>
+        }
+
+        <span class="cov1" title="1">var out T
+        if err := jsonapi.UnmarshalPayload(resp.Body, &amp;out); err != nil </span><span class="cov0" title="0">{
+                return nil, WriteDisposition{}, fmt.Errorf("decoding patched %s: %w", plural, err)
+        }</span>
+        <span class="cov1" title="1">return &amp;out, WriteDisposition{}, nil</span>
+}
+
+// Delete issues the soft-delete request. Success is 204 No Content.
+func Delete(ctx context.Context, c *Client, plural, id string) error <span class="cov1" title="1">{
+        resp, err := c.do(ctx, "DELETE", c.buildURL(plural, "/"+id, nil), nil, "")
+        if err != nil </span><span class="cov0" title="0">{
+                return err
+        }</span>
+        <span class="cov1" title="1">return resp.Body.Close()</span>
+}
+</pre>
+		
+		<pre class="file" id="file2" style="display: none">// Package client is a thin JSON:API client for catalog-api, typed against
+// catalog-objects.go value objects. It covers list/get/create/patch/delete for
+// every entity type plus the /search endpoints used for name resolution.
+package client
+
+import (
+        "bytes"
+        "context"
+        "encoding/json"
+        "fmt"
+        "io"
+        "net/http"
+        "net/url"
+        "strings"
+)
+
+// MediaType is the JSON:API content type catalog-api serves.
+const MediaType = "application/vnd.api+json"
+
+// TokenSource supplies the bearer token per request. Returning an empty string
+// sends no Authorization header.
+type TokenSource func(ctx context.Context) (string, error)
+
+// Client talks to one catalog-api deployment.
+type Client struct {
+        BaseURL *url.URL
+        HTTP    *http.Client
+        Tokens  TokenSource
+}
+
+// New parses baseURL (must be absolute http(s)) and returns a Client using the
+// default HTTP transport.
+func New(baseURL string, tokens TokenSource) (*Client, error) <span class="cov10" title="13">{
+        u, err := url.Parse(strings.TrimSpace(baseURL))
+        if err != nil || u.Scheme != "http" &amp;&amp; u.Scheme != "https" || u.Host == "" </span><span class="cov0" title="0">{
+                return nil, fmt.Errorf("invalid catalog API base URL %q", baseURL)
+        }</span>
+        <span class="cov10" title="13">return &amp;Client{BaseURL: u, HTTP: http.DefaultClient, Tokens: tokens}, nil</span>
+}
+
+// APIError carries a non-2xx response's status and parsed body. Body shapes
+// vary by handler ({error,message} or {error}); anything unparseable keeps the
+// raw text in Message so operators see what the server said.
+type APIError struct {
+        StatusCode int
+        Code       string
+        Message    string
+}
+
+func (e *APIError) Error() string <span class="cov0" title="0">{
+        if e.Message == "" </span><span class="cov0" title="0">{
+                return fmt.Sprintf("catalog-api returned %d (%s)", e.StatusCode, e.Code)
+        }</span>
+        <span class="cov0" title="0">return fmt.Sprintf("catalog-api returned %d %s: %s", e.StatusCode, e.Code, e.Message)</span>
+}
+
+// IsNotFound reports whether err is a 404 from the server.
+func IsNotFound(err error) bool <span class="cov1" title="1">{
+        apiErr, ok := err.(*APIError)
+        return ok &amp;&amp; apiErr.StatusCode == http.StatusNotFound
+}</span>
+
+// IsAuthError reports whether err indicates missing/insufficient credentials.
+func IsAuthError(err error) bool <span class="cov4" title="3">{
+        apiErr, ok := err.(*APIError)
+        if !ok </span><span class="cov0" title="0">{
+                return false
+        }</span>
+        <span class="cov4" title="3">return apiErr.StatusCode == http.StatusUnauthorized || apiErr.StatusCode == http.StatusForbidden</span>
+}
+
+func (c *Client) buildURL(plural, pathSuffix string, query url.Values) *url.URL <span class="cov10" title="13">{
+        u := *c.BaseURL
+        u.Path = strings.TrimRight(u.Path, "/") + "/" + plural + pathSuffix
+        if len(query) &gt; 0 </span><span class="cov3" title="2">{
+                u.RawQuery = query.Encode()
+        }</span>
+        <span class="cov10" title="13">return &amp;u</span>
+}
+
+func (c *Client) do(ctx context.Context, method string, u *url.URL, body io.Reader, contentType string) (*http.Response, error) <span class="cov10" title="13">{
+        req, err := http.NewRequestWithContext(ctx, method, u.String(), body)
+        if err != nil </span><span class="cov0" title="0">{
+                return nil, err
+        }</span>
+        <span class="cov10" title="13">req.Header.Set("Accept", MediaType)
+        if contentType != "" </span><span class="cov5" title="4">{
+                req.Header.Set("Content-Type", contentType)
+        }</span>
+        <span class="cov10" title="13">if c.Tokens != nil </span><span class="cov10" title="13">{
+                token, err := c.Tokens(ctx)
+                if err != nil </span><span class="cov0" title="0">{
+                        return nil, fmt.Errorf("resolving access token: %w", err)
+                }</span>
+                <span class="cov10" title="13">if token != "" </span><span class="cov10" title="13">{
+                        req.Header.Set("Authorization", "Bearer "+token)
+                }</span>
+        }
+        <span class="cov10" title="13">resp, err := c.HTTP.Do(req)
+        if err != nil </span><span class="cov0" title="0">{
+                return nil, err
+        }</span>
+        <span class="cov10" title="13">if resp.StatusCode &lt; 200 || resp.StatusCode &gt;= 300 </span><span class="cov5" title="4">{
+                defer drainAndClose(resp)
+                return nil, apiErrorFrom(resp)
+        }</span>
+        <span class="cov8" title="9">return resp, nil</span>
+}
+
+// drainAndClose reads any remaining body bytes so the connection is reusable
+// and closes it. Close errors are irrelevant once the response is consumed.
+func drainAndClose(resp *http.Response) <span class="cov9" title="12">{
+        _, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 1&lt;&lt;20))
+        _ = resp.Body.Close()
+}</span>
+
+func apiErrorFrom(resp *http.Response) error <span class="cov5" title="4">{
+        raw, err := io.ReadAll(io.LimitReader(resp.Body, 1&lt;&lt;20))
+        if err != nil </span><span class="cov0" title="0">{
+                return &amp;APIError{StatusCode: resp.StatusCode, Message: "unreadable body"}
+        }</span>
+        <span class="cov5" title="4">var parsed struct {
+                Error   any    `json:"error"`
+                Message string `json:"message"`
+        }
+        if json.Unmarshal(raw, &amp;parsed) == nil </span><span class="cov5" title="4">{
+                code := ""
+                switch v := parsed.Error.(type) </span>{
+                case string:<span class="cov4" title="3">
+                        code = v</span>
+                case nil:<span class="cov1" title="1"></span>
+                default:<span class="cov0" title="0">
+                        code = fmt.Sprint(v)</span>
+                }
+                <span class="cov5" title="4">return &amp;APIError{StatusCode: resp.StatusCode, Code: code, Message: parsed.Message}</span>
+        }
+        <span class="cov0" title="0">return &amp;APIError{StatusCode: resp.StatusCode, Message: strings.TrimSpace(string(raw))}</span>
+}
+
+func sendJSON[T any](v T) (*bytes.Reader, error) <span class="cov5" title="4">{
+        payload, err := json.Marshal(v)
+        if err != nil </span><span class="cov0" title="0">{
+                return nil, err
+        }</span>
+        <span class="cov5" title="4">return bytes.NewReader(payload), nil</span>
+}
+</pre>
+		
+		<pre class="file" id="file3" style="display: none">package client
+
+import "fmt"
+
+// EntityType describes one catalog entity's URL shape. Searchable marks types
+// that expose the /search?q= endpoint backing name resolution.
+type EntityType struct {
+        Name       string
+        Plural     string
+        Searchable bool
+}
+
+// Entities is the full registry of entity types the CLI can address.
+var Entities = map[string]EntityType{
+        "volume":       {Name: "volume", Plural: "volumes", Searchable: false},
+        "publisher":    {Name: "publisher", Plural: "publishers", Searchable: true},
+        "studio":       {Name: "studio", Plural: "studios", Searchable: true},
+        "person":       {Name: "person", Plural: "persons", Searchable: true},
+        "system":       {Name: "system", Plural: "systems", Searchable: true},
+        "license":      {Name: "license", Plural: "licenses", Searchable: true},
+        "review":       {Name: "review", Plural: "reviews", Searchable: false},
+        "contribution": {Name: "contribution", Plural: "contributions", Searchable: false},
+}
+
+// Lookup returns the entity type for a CLI name, erroring on unknown types so
+// typos fail before any network call.
+func Lookup(name string) (EntityType, error) <span class="cov10" title="9">{
+        t, ok := Entities[name]
+        if !ok </span><span class="cov1" title="1">{
+                return EntityType{}, fmt.Errorf("unknown entity type %q (known: volume, publisher, studio, person, system, license, review, contribution)", name)
+        }</span>
+        <span class="cov9" title="8">return t, nil</span>
+}
+</pre>
+		
+		<pre class="file" id="file4" style="display: none">package cmd
 
 import "github.com/spf13/cobra"
 
@@ -113,7 +479,7 @@ func Execute() error <span class="cov0" title="0">{
 }</span>
 </pre>
 		
-		<pre class="file" id="file2" style="display: none">// Package config resolves CLI configuration from flags, environment, and the
+		<pre class="file" id="file5" style="display: none">// Package config resolves CLI configuration from flags, environment, and the
 // config file. Only non-secret settings live in the file; tokens go to the OS
 // keychain.
 package config
