@@ -57,6 +57,8 @@
 				
 				<option value="file0">github.com/sweetrpg/catalog-cli/cmd/sweetrpg-catalog/main.go (0.0%)</option>
 				
+				<option value="file1">github.com/sweetrpg/catalog-cli/internal/cmd/root.go (0.0%)</option>
+				
 				</select>
 			</div>
 			<div id="legend">
@@ -80,7 +82,33 @@
 		
 		<pre class="file" id="file0" style="display: none">package main
 
-func main() {<span class="cov0" title="0">}</span>
+import (
+        "os"
+
+        "github.com/sweetrpg/catalog-cli/internal/cmd"
+)
+
+func main() <span class="cov0" title="0">{
+        if err := cmd.Execute(); err != nil </span><span class="cov0" title="0">{
+                os.Exit(1)
+        }</span>
+}
+</pre>
+		
+		<pre class="file" id="file1" style="display: none">package cmd
+
+import "github.com/spf13/cobra"
+
+var rootCmd = &amp;cobra.Command{
+        Use:   "sweetrpg-catalog",
+        Short: "Command-line client for the SweetRPG catalog service",
+}
+
+// Execute runs the root command. Errors returned by subcommands are printed by
+// cobra; the exit code is decided here so subcommands can signal specific codes.
+func Execute() error <span class="cov0" title="0">{
+        return rootCmd.Execute()
+}</span>
 </pre>
 		
 		</div>
