@@ -31,7 +31,7 @@ func formatFromFlags(cmd *cobra.Command) (outputFormat, error) {
 	yamlFlag := changedFlag(cmd, "yaml")
 	switch {
 	case jsonFlag && yamlFlag:
-		return formatHuman, fmt.Errorf("--json and --yaml are mutually exclusive")
+		return formatHuman, usageErr("--json and --yaml are mutually exclusive")
 	case jsonFlag:
 		return formatJSON, nil
 	case yamlFlag:

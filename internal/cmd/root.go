@@ -1,6 +1,9 @@
 package cmd
 
 import (
+	"errors"
+	"fmt"
+	"strings"
 	"sync"
 
 	"github.com/spf13/cobra"
@@ -9,6 +12,19 @@ import (
 var rootCmd = &cobra.Command{
 	Use:   "sweetrpg-catalog",
 	Short: "Command-line client for the SweetRPG catalog service",
+	Long: "Manage SweetRPG catalog records: volumes, publishers, studios, persons, systems,\n" +
+		"licenses, reviews, and contributions.\n\n" +
+		"Entity commands share one shape:\n" +
+		"  sweetrpg-catalog add <type> <name> [property flags]\n" +
+		"  sweetrpg-catalog edit <type> <name-or-id> [property flags]\n" +
+		"  sweetrpg-catalog view <type> <name-or-id> [--json | --yaml]\n" +
+		"  sweetrpg-catalog delete <type> <name-or-id> [--force]\n\n" +
+		"Links connect two entities (either argument order):\n" +
+		"  sweetrpg-catalog link volume \"Dungeon World\" publisher \"Evil Hat Productions\"\n\n" +
+		"Name arguments resolve to record IDs; 24-hex IDs are used directly. Ambiguous names\n" +
+		"prompt a picker, or fail with the candidate list when --yes is set.\n\n" +
+		"Shell completion: sweetrpg-catalog completion [bash|zsh|fish|powershell]\n" +
+		"Exit codes: 0 success, 1 error, 2 usage, 3 authentication.",
 }
 
 var buildOnce sync.Once
@@ -33,5 +49,32 @@ func buildTree() {
 // cobra; the exit code is decided here so subcommands can signal specific codes.
 func Execute() error {
 	buildTree()
-	return rootCmd.Execute()
+	rootCmd.SetFlagErrorFunc(func(_ *cobra.Command, err error) error {
+		return &ExitError{Code: 2, Err: err}
+	})
+	return classifyUsage(rootCmd.Execute())
+}
+
+// classifyUsage maps cobra's untyped command/argument errors to the documented
+// usage exit code. Cobra has no typed errors for these; the message shapes it
+// produces for them are stable.
+func classifyUsage(err error) error {
+	if err == nil {
+		return nil
+	}
+	var ec ExitCoder
+	if errors.As(err, &ec) {
+		return err
+	}
+	msg := err.Error()
+	if strings.HasPrefix(msg, "unknown command ") || strings.Contains(msg, " arg(s)") ||
+		strings.HasPrefix(msg, "unknown flag:") || strings.HasPrefix(msg, "unknown shorthand flag:") {
+		return &ExitError{Code: 2, Err: err}
+	}
+	return err
+}
+
+// usageErr tags a validation failure as a usage error (exit code 2).
+func usageErr(format string, args ...any) error {
+	return &ExitError{Code: 2, Err: fmt.Errorf(format, args...)}
 }

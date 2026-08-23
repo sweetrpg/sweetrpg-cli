@@ -160,7 +160,7 @@ func newEditCommand() *cobra.Command {
 					return err
 				}
 				if len(fields) == 0 {
-					return fmt.Errorf("no properties to update; pass at least one property flag")
+					return usageErr("no properties to update; pass at least one property flag")
 				}
 				c, err := buildAPIClient()
 				if err != nil {

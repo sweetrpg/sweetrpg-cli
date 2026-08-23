@@ -99,15 +99,15 @@ func runPair(cmd *cobra.Command, args []string, add bool) error {
 	t1, ref1, t2, ref2 := args[0], args[1], args[2], args[3]
 	opsA, ok := entityRegistry[t1]
 	if !ok {
-		return fmt.Errorf("unknown entity type %q; valid types: %s", t1, joinList(sortedEntityNames()))
+		return usageErr("unknown entity type %q; valid types: %s", t1, joinList(sortedEntityNames()))
 	}
 	opsB, ok := entityRegistry[t2]
 	if !ok {
-		return fmt.Errorf("unknown entity type %q; valid types: %s", t2, joinList(sortedEntityNames()))
+		return usageErr("unknown entity type %q; valid types: %s", t2, joinList(sortedEntityNames()))
 	}
 	rule, ok := findLinkRule(t1, t2)
 	if !ok {
-		return fmt.Errorf("links between %s and %s aren't supported; valid counterparts for %s: %s",
+		return usageErr("links between %s and %s aren't supported; valid counterparts for %s: %s",
 			t1, t2, t1, joinList(counterpartList(t1)))
 	}
 
