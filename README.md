@@ -44,6 +44,9 @@ This opens the Auth0 device-flow login (visit the printed URL and enter the code
 stored in your OS keychain under service name `sweetrpg-catalog-cli`; access tokens refresh
 automatically. `auth logout` removes them. Auth failures exit with code 3.
 
+Reads don't require a login: `view` (and name resolution it performs) hits public endpoints and
+works with no stored session. Writes (`add`, `edit`, `delete`, `link`, `unlink`) require one.
+
 ## Usage
 
 Entity commands share one shape; `<type>` is one of the entity types above:

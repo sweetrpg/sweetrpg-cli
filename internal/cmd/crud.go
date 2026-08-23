@@ -20,8 +20,11 @@ var (
 	flagAPIURL       string
 	flagAssetsWebURL string
 
-	// buildAPIClient is a var so tests can point commands at a fixture server.
-	buildAPIClient = apiClient
+	// buildAPIClient and buildAnonClient are vars so tests can point commands
+	// at a fixture server. Reads (view) hit unauthenticated endpoints and use
+	// the anonymous builder; everything else requires a session.
+	buildAPIClient  = func() (*client.Client, error) { return newAPIClient(true) }
+	buildAnonClient = func() (*client.Client, error) { return newAPIClient(false) }
 )
 
 // Generated per-entity children are kept here so tests can drive them.
@@ -60,8 +63,10 @@ func joinList(items []string) string {
 	return out
 }
 
-// apiClient wires config and the keychain-backed session source into a client.
-func apiClient() (*client.Client, error) {
+// newAPIClient wires config and the keychain-backed session source into a
+// client. With requireAuth false, a missing stored session is tolerated and
+// requests go out unauthenticated (read endpoints are public).
+func newAPIClient(requireAuth bool) (*client.Client, error) {
 	cfg, err := config.Load(config.Sources{
 		FlagAPIURL:       flagAPIURL,
 		FlagAssetsWebURL: flagAssetsWebURL,
@@ -77,13 +82,26 @@ func apiClient() (*client.Client, error) {
 	}
 	hc := &http.Client{Timeout: 30 * time.Second}
 	source := &auth.SessionSource{Cfg: authCfg, HTTP: hc, Store: auth.KeyringStore{}}
-	return client.New(cfg.APIURL, func(ctx context.Context) (string, error) {
+	return client.New(cfg.APIURL, tokenFunc(source, requireAuth))
+}
+
+// tokenFunc adapts a session source to the client's TokenSource. Anonymous
+// mode downgrades ErrNotLoggedIn to "no Authorization header"; auth-required
+// mode turns token failures into the login exit code.
+func tokenFunc(source *auth.SessionSource, requireAuth bool) client.TokenSource {
+	return func(ctx context.Context) (string, error) {
 		token, err := source.Token(ctx)
-		if err != nil && !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
-			err = authExit(err)
+		if err != nil {
+			switch {
+			case !requireAuth && errors.Is(err, auth.ErrNotLoggedIn):
+				return "", nil
+			case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
+			default:
+				err = authExit(err)
+			}
 		}
 		return token, err
-	})
+	}
 }
 
 // changedValues gathers provided flags as string slices; works for both
@@ -201,7 +219,7 @@ func newViewCommand() *cobra.Command {
 				if err != nil {
 					return err
 				}
-				c, err := buildAPIClient()
+				c, err := buildAnonClient()
 				if err != nil {
 					return err
 				}

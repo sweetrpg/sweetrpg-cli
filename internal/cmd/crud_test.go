@@ -47,11 +47,13 @@ func newCmdFixture(t *testing.T, status int, body string) *cmdFixture {
 	}))
 	t.Cleanup(srv.Close)
 	oldBuilder := buildAPIClient
+	oldAnonBuilder := buildAnonClient
 	buildAPIClient = func() (*client.Client, error) {
 		c, err := client.New(srv.URL, func(context.Context) (string, error) { return "test-token", nil })
 		return c, err
 	}
-	t.Cleanup(func() { buildAPIClient = oldBuilder })
+	buildAnonClient = buildAPIClient
+	t.Cleanup(func() { buildAPIClient = oldBuilder; buildAnonClient = oldAnonBuilder })
 	resetResolveState(t)
 	for _, m := range []map[string]*cobra.Command{addChildren, editChildren, viewChildren, deleteChildren} {
 		for _, child := range m {
@@ -198,11 +200,13 @@ func TestViewResolvesByNameBeforeFetch(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 	oldBuilder := buildAPIClient
+	oldAnonBuilder := buildAnonClient
 	buildAPIClient = func() (*client.Client, error) {
 		c, err := client.New(srv.URL, func(context.Context) (string, error) { return "tok", nil })
 		return c, err
 	}
-	t.Cleanup(func() { buildAPIClient = oldBuilder })
+	buildAnonClient = buildAPIClient
+	t.Cleanup(func() { buildAPIClient = oldBuilder; buildAnonClient = oldAnonBuilder })
 	resetResolveState(t)
 
 	child := viewChildren["publisher"]

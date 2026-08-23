@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"net/http"
@@ -9,6 +10,9 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
+
+	"github.com/sweetrpg/catalog-cli/internal/auth"
+	"github.com/sweetrpg/catalog-cli/internal/client"
 )
 
 func exitCodeOf(t *testing.T, err error) int {
@@ -116,5 +120,44 @@ func TestCompletionSubcommandExists(t *testing.T) {
 		if err := Execute(); err != nil {
 			t.Errorf("completion %s failed: %v", shell, err)
 		}
+	}
+}
+
+func TestViewUsesAnonymousClientAndSucceedsLoggedOut(t *testing.T) {
+	f := newCmdFixture(t, http.StatusOK, onePublisherJSON)
+	oldBuilder := buildAPIClient
+	buildAPIClient = func() (*client.Client, error) {
+		return nil, errors.New("view must not use the authenticated client")
+	}
+	t.Cleanup(func() { buildAPIClient = oldBuilder })
+	resetResolveState(t)
+
+	child := viewChildren["publisher"]
+	var out bytes.Buffer
+	child.SetContext(context.Background())
+	child.SetOut(&out)
+	if err := child.RunE(child, []string{"507f1f77bcf86cd799439011"}); err != nil {
+		t.Fatalf("view should work without a session: %v", err)
+	}
+	if f.requests == 0 {
+		t.Fatal("view made no requests")
+	}
+}
+
+func TestTokenFuncDowngradesNotLoggedInOnlyWhenOptional(t *testing.T) {
+	source := &auth.SessionSource{Store: &auth.MemoryStore{}}
+	ctx := context.Background()
+
+	token, err := tokenFunc(source, false)(ctx)
+	if err != nil || token != "" {
+		t.Errorf("anonymous mode: want (\"\", nil), got (%q, %v)", token, err)
+	}
+
+	token, err = tokenFunc(source, true)(ctx)
+	if exitCodeOf(t, err) != 3 {
+		t.Errorf("auth-required mode: want exit 3, got %v", err)
+	}
+	if token != "" {
+		t.Errorf("want no token, got %q", token)
 	}
 }
