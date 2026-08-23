@@ -102,7 +102,7 @@ linking PATCH but not the upload itself.
 
 ## Scripting
 
-- Pass `--yes` to skip all interactive prompts (delete confirmation included); ambiguous name resolutions then fail instead of prompting.
+- Pass `--yes` to skip all interactive prompts; ambiguous name resolutions then fail instead of prompting. Deletes additionally require `--force` when stdin is not a TTY - `--yes` alone never deletes in a script.
 - Use `view <type> <id> --json` for machine-readable output.
 - Pass `--curl` to print the equivalent cURL command(s) instead of calling the API. Nothing is sent; the bearer token is printed as `<redacted>`. Flows that need server data to continue (name resolution feeding later requests) stop after their first request, so pass IDs instead of names to see write requests directly.
 - Exit codes: `0` success, `1` general error, `2` usage error, `3` authentication failure.
