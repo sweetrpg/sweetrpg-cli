@@ -519,3 +519,26 @@ func TestKeyringStoreRefusesIncompleteSessions(t *testing.T) {
 		t.Fatal("incomplete session must be rejected")
 	}
 }
+
+func TestDefaultConfigFallsBackToEnvironment(t *testing.T) {
+	oldDomain, oldClient, oldAud := Domain, ClientID, Audience
+	defer func() { Domain, ClientID, Audience = oldDomain, oldClient, oldAud }()
+	Domain, ClientID, Audience = "", "", ""
+
+	t.Setenv("SWEETRPG_AUTH_DOMAIN", "dev-test.us.auth0.com")
+	t.Setenv("SWEETRPG_AUTH_CLIENT_ID", "cid")
+	t.Setenv("SWEETRPG_AUTH_AUDIENCE", "https://catalog-api")
+
+	cfg, err := DefaultConfig()
+	if err != nil {
+		t.Fatalf("want env fallback to satisfy config, got %v", err)
+	}
+	if cfg.Domain != "dev-test.us.auth0.com" || cfg.ClientID != "cid" || cfg.Audience != "https://catalog-api" {
+		t.Errorf("unexpected config: %+v", cfg)
+	}
+
+	t.Setenv("SWEETRPG_AUTH_CLIENT_ID", "")
+	if _, err := DefaultConfig(); err == nil || !strings.Contains(err.Error(), "not configured") {
+		t.Errorf("partial env must still error, got %v", err)
+	}
+}

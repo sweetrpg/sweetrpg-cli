@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 )
@@ -36,13 +37,27 @@ type Config struct {
 	PollIntervalFloor time.Duration
 }
 
-// DefaultConfig resolves the build-time settings, erroring when they are not
-// baked in (e.g. `go install` without ldflags).
+// DefaultConfig resolves the build-time settings, falling back to
+// SWEETRPG_AUTH_DOMAIN / SWEETRPG_AUTH_CLIENT_ID / SWEETRPG_AUTH_AUDIENCE for
+// dev runs (plain `go run` bakes nothing in). It errors when neither source
+// provides a full configuration.
 func DefaultConfig() (*Config, error) {
-	if Domain == "" || ClientID == "" || Audience == "" {
-		return nil, fmt.Errorf("auth is not configured: rebuild with -ldflags setting sweetrpg.auth domain, client id, and audience")
+	domain := firstNonEmpty(Domain, os.Getenv("SWEETRPG_AUTH_DOMAIN"))
+	clientID := firstNonEmpty(ClientID, os.Getenv("SWEETRPG_AUTH_CLIENT_ID"))
+	audience := firstNonEmpty(Audience, os.Getenv("SWEETRPG_AUTH_AUDIENCE"))
+	if domain == "" || clientID == "" || audience == "" {
+		return nil, fmt.Errorf("auth is not configured: set SWEETRPG_AUTH_DOMAIN, SWEETRPG_AUTH_CLIENT_ID, and SWEETRPG_AUTH_AUDIENCE (or rebuild with -ldflags setting sweetrpg.auth domain, client id, and audience)")
 	}
-	return &Config{Domain: Domain, ClientID: ClientID, Audience: Audience, Scopes: Scopes}, nil
+	return &Config{Domain: domain, ClientID: clientID, Audience: audience, Scopes: Scopes}, nil
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, v := range values {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
 }
 
 func (c *Config) validate() error {

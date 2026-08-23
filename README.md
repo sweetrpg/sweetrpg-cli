@@ -34,7 +34,16 @@ assets-web-url: https://assets-web.dev.sweetrpg.com
 
 ## Authentication
 
-Commands that write require a login. Run once per machine:
+Commands that write require a login. Auth settings are baked into release builds; for dev runs
+against plain `go run`, export them instead:
+
+```bash
+export SWEETRPG_AUTH_DOMAIN=dev-xxxx.us.auth0.com
+export SWEETRPG_AUTH_CLIENT_ID=...
+export SWEETRPG_AUTH_AUDIENCE=https://catalog-api
+```
+
+Run once per machine:
 
 ```bash
 sweetrpg-catalog auth login
