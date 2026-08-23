@@ -67,9 +67,15 @@ sweetrpg-catalog view <type> <name-or-id> [--json | --yaml]
 sweetrpg-catalog delete <type> <name-or-id>
 ```
 
-Name arguments resolve to record IDs automatically; 24-hex IDs are used as-is. When a name
-matches several records an interactive picker lists each candidate's ID, or (with `--yes`)
-the command fails and prints the candidates.
+Name arguments match case-insensitively and partially (exact matches win when both kinds
+hit); 24-hex IDs are used as-is. When a name matches several records an interactive picker
+lists each candidate's ID, or (with `--yes`) the command fails and prints the candidates.
+
+To see what a fuzzy query will hit before resolving, use `search`:
+
+```bash
+sweetrpg-catalog search <type> <query>    # prints "ID<TAB>name" per hit
+```
 
 Links connect two entities in either argument order:
 
@@ -93,6 +99,7 @@ sweetrpg-catalog edit volume "Dungeon World" --cover ./dw-cover.png
 
 - Pass `--yes` to skip all interactive prompts (delete confirmation included); ambiguous name resolutions then fail instead of prompting.
 - Use `view <type> <id> --json` for machine-readable output.
+- Pass `--curl` to print the equivalent cURL command(s) instead of calling the API. Nothing is sent; the bearer token is printed as `<redacted>`. Flows that need server data to continue (name resolution feeding later requests) stop after their first request, so pass IDs instead of names to see write requests directly.
 - Exit codes: `0` success, `1` general error, `2` usage error, `3` authentication failure.
 
 ## Shell Completion

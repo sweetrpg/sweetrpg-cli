@@ -81,13 +81,25 @@ func newAPIClient(requireAuth bool) (*client.Client, error) {
 		if !requireAuth {
 			// Reads are public; a binary built without baked-in auth settings
 			// (e.g. plain `go run`) still serves them, just with no token.
-			return client.New(cfg.APIURL, func(context.Context) (string, error) { return "", nil })
+			c, cerr := client.New(cfg.APIURL, func(context.Context) (string, error) { return "", nil })
+			if cerr != nil {
+				return nil, cerr
+			}
+			withCurlCapture(&c.HTTP)
+			return c, nil
 		}
 		return nil, err
 	}
 	hc := &http.Client{Timeout: 30 * time.Second}
 	source := &auth.SessionSource{Cfg: authCfg, HTTP: hc, Store: auth.KeyringStore{}}
-	return client.New(cfg.APIURL, tokenFunc(source, requireAuth))
+	c, err := client.New(cfg.APIURL, tokenFunc(source, requireAuth))
+	if err != nil {
+		return nil, err
+	}
+	// Only catalog-api calls are captured; the auth source's own HTTP stays
+	// real so a --curl run never prints refresh tokens.
+	withCurlCapture(&c.HTTP)
+	return c, nil
 }
 
 // tokenFunc adapts a session source to the client's TokenSource. Anonymous

@@ -36,12 +36,14 @@ func buildTree() {
 		rootCmd.PersistentFlags().StringVar(&flagAPIURL, "api-url", "", "catalog API base URL (overrides env and config file)")
 		rootCmd.PersistentFlags().StringVar(&flagAssetsWebURL, "assets-web-url", "", "assets-web base URL for asset uploads")
 		rootCmd.PersistentFlags().BoolVar(&flagYes, "yes", false, "assume non-interactive mode; fail on ambiguity with the candidate list")
+		rootCmd.PersistentFlags().BoolVar(&flagCurl, "curl", false, "print the equivalent cURL command(s) instead of calling the API")
 		rootCmd.AddCommand(newAddCommand())
 		rootCmd.AddCommand(newEditCommand())
 		rootCmd.AddCommand(newViewCommand())
 		rootCmd.AddCommand(newDeleteCommand())
 		rootCmd.AddCommand(newLinkCommand())
 		rootCmd.AddCommand(newUnlinkCommand())
+		rootCmd.AddCommand(newSearchCommand())
 	})
 }
 
@@ -52,7 +54,13 @@ func Execute() error {
 	rootCmd.SetFlagErrorFunc(func(_ *cobra.Command, err error) error {
 		return &ExitError{Code: 2, Err: err}
 	})
-	return classifyUsage(rootCmd.Execute())
+	err := classifyUsage(rootCmd.Execute())
+	// A --curl run that rendered its request(s) is a success, even though the
+	// capture transport aborts the flow with a sentinel.
+	if isCurlExit(err) {
+		return nil
+	}
+	return err
 }
 
 // classifyUsage maps cobra's untyped command/argument errors to the documented
