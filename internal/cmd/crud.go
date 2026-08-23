@@ -185,6 +185,7 @@ func newEditCommand() *cobra.Command {
 	}
 	for _, name := range sortedEntityNames() {
 		ops := entityRegistry[name]
+		af, hasAsset := lookupAssetFlag(name)
 		child := &cobra.Command{
 			Use:   fmt.Sprintf("%s <name-or-id> [flags]", name),
 			Short: fmt.Sprintf("Edit a %s", name),
@@ -194,7 +195,11 @@ func newEditCommand() *cobra.Command {
 				if err != nil {
 					return err
 				}
-				if len(fields) == 0 {
+				assetPath := ""
+				if hasAsset {
+					assetPath, _ = cmd.Flags().GetString(af.name)
+				}
+				if len(fields) == 0 && assetPath == "" {
 					return usageErr("no properties to update; pass at least one property flag")
 				}
 				c, err := buildAPIClient()
@@ -205,6 +210,16 @@ func newEditCommand() *cobra.Command {
 				if err != nil {
 					return err
 				}
+				if assetPath != "" {
+					disp, err := af.apply(cmd.Context(), c, id, assetPath)
+					if err != nil {
+						return writeErr(err)
+					}
+					cmd.Println(dispositionText(disp))
+				}
+				if len(fields) == 0 {
+					return nil
+				}
 				_, disp, err := ops.patch(cmd.Context(), c, id, fields)
 				if err != nil {
 					return writeErr(err)
@@ -214,6 +229,9 @@ func newEditCommand() *cobra.Command {
 			},
 		}
 		ops.register(child.Flags())
+		if hasAsset {
+			child.Flags().String(af.name, "", af.usage)
+		}
 		edit.AddCommand(child)
 		editChildren[name] = child
 	}

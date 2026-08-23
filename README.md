@@ -95,6 +95,11 @@ Volumes also support staged-asset upload for covers:
 sweetrpg-catalog edit volume "Dungeon World" --cover ./dw-cover.png
 ```
 
+`--cover` accepts png, jpeg, or webp files and can be combined with property
+flags. Uploads require a session and an `assets-web-url` (flag, env, or config
+file); they talk to assets-web directly, so a `--curl` run previews the
+linking PATCH but not the upload itself.
+
 ## Scripting
 
 - Pass `--yes` to skip all interactive prompts (delete confirmation included); ambiguous name resolutions then fail instead of prompting.

@@ -57,7 +57,14 @@ func newCmdFixture(t *testing.T, status int, body string) *cmdFixture {
 	resetResolveState(t)
 	for _, m := range []map[string]*cobra.Command{addChildren, editChildren, viewChildren, deleteChildren} {
 		for _, child := range m {
-			child.Flags().VisitAll(func(f *pflag.Flag) { f.Changed = false })
+			child.Flags().VisitAll(func(f *pflag.Flag) {
+				f.Changed = false
+				// Clear leftover values from earlier tests so stateless
+				// assertions (like "no properties to update") stay valid.
+				if f.DefValue == "" {
+					_ = f.Value.Set("")
+				}
+			})
 		}
 	}
 	return f
@@ -72,6 +79,15 @@ func runEntityCommand(t *testing.T, cmd *cobra.Command, args []string) string {
 		t.Fatalf("command failed: %v", err)
 	}
 	return out.String()
+}
+
+// runEntityCommandExpectError runs a command and hands back its error instead
+// of failing the test; use when the error text is the assertion.
+func runEntityCommandExpectError(t *testing.T, cmd *cobra.Command, args []string) error {
+	t.Helper()
+	cmd.SetContext(context.Background())
+	cmd.SetOut(io.Discard)
+	return cmd.RunE(cmd, args)
 }
 
 const createdPublisherJSON = `{"data":{"type":"publisher","id":"pub777","attributes":{"name":"Evil Hat Productions"}}}`
