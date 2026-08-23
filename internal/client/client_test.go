@@ -256,3 +256,17 @@ func TestLookupRejectsUnknownEntity(t *testing.T) {
 func contains(haystack, needle string) bool {
 	return strings.Contains(haystack, needle)
 }
+
+func TestAPIErrorParsesJSONAPIErrorDetail(t *testing.T) {
+	f, c := newFixture(t, http.StatusUnprocessableEntity,
+		`{"errors":[{"detail":"submission cap reached for this record"}]}`)
+	_ = f
+	_, err := Get[catalogvo.VolumeVO](context.Background(), c, "volumes", "x")
+	apiErr, ok := err.(*APIError)
+	if !ok {
+		t.Fatalf("want *APIError, got %T", err)
+	}
+	if apiErr.Message != "submission cap reached for this record" {
+		t.Errorf("message = %q", apiErr.Message)
+	}
+}

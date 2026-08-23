@@ -39,9 +39,11 @@ func New(baseURL string, tokens TokenSource) (*Client, error) {
 }
 
 // APIError carries a non-2xx response's status and parsed body. Body shapes
-// vary by handler ({error,message} or {error}); anything unparseable keeps the
-// raw text in Message so operators see what the server said.
+// vary by handler ({error,message}, {message}, or {error}); anything
+// unparseable keeps the raw text in Message so operators see what the server
+// said.
 type APIError struct {
+	Service    string
 	StatusCode int
 	Code       string
 	Message    string
@@ -49,9 +51,16 @@ type APIError struct {
 
 func (e *APIError) Error() string {
 	if e.Message == "" {
-		return fmt.Sprintf("catalog-api returned %d (%s)", e.StatusCode, e.Code)
+		return fmt.Sprintf("%s returned %d (%s)", e.service(), e.StatusCode, e.Code)
 	}
-	return fmt.Sprintf("catalog-api returned %d %s: %s", e.StatusCode, e.Code, e.Message)
+	return fmt.Sprintf("%s returned %d %s: %s", e.service(), e.StatusCode, e.Code, e.Message)
+}
+
+func (e *APIError) service() string {
+	if e.Service == "" {
+		return "catalog-api"
+	}
+	return e.Service
 }
 
 // IsNotFound reports whether err is a 404 from the server.
@@ -79,6 +88,13 @@ func (c *Client) buildURL(plural, pathSuffix string, query url.Values) *url.URL 
 }
 
 func (c *Client) do(ctx context.Context, method string, u *url.URL, body io.Reader, contentType string) (*http.Response, error) {
+	return sendRequest(ctx, c.BaseURL, c.HTTP, c.Tokens, "catalog-api", method, u, body, contentType)
+}
+
+// sendRequest is the shared request plumbing for both catalog-api and
+// assets-web: Accept header always, optional Content-Type, bearer token from
+// tokens when non-empty, and non-2xx mapped to *APIError naming service.
+func sendRequest(ctx context.Context, baseURL *url.URL, hc *http.Client, tokens TokenSource, service, method string, u *url.URL, body io.Reader, contentType string) (*http.Response, error) {
 	req, err := http.NewRequestWithContext(ctx, method, u.String(), body)
 	if err != nil {
 		return nil, err
@@ -87,8 +103,8 @@ func (c *Client) do(ctx context.Context, method string, u *url.URL, body io.Read
 	if contentType != "" {
 		req.Header.Set("Content-Type", contentType)
 	}
-	if c.Tokens != nil {
-		token, err := c.Tokens(ctx)
+	if tokens != nil {
+		token, err := tokens(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("resolving access token: %w", err)
 		}
@@ -96,13 +112,15 @@ func (c *Client) do(ctx context.Context, method string, u *url.URL, body io.Read
 			req.Header.Set("Authorization", "Bearer "+token)
 		}
 	}
-	resp, err := c.HTTP.Do(req)
+	resp, err := hc.Do(req)
 	if err != nil {
 		return nil, err
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		defer drainAndClose(resp)
-		return nil, apiErrorFrom(resp)
+		apiErr := apiErrorFrom(resp).(*APIError)
+		apiErr.Service = service
+		return nil, apiErr
 	}
 	return resp, nil
 }
@@ -122,6 +140,10 @@ func apiErrorFrom(resp *http.Response) error {
 	var parsed struct {
 		Error   any    `json:"error"`
 		Message string `json:"message"`
+		Errors  []struct {
+			Detail string `json:"detail"`
+			Title  string `json:"title"`
+		} `json:"errors"`
 	}
 	if json.Unmarshal(raw, &parsed) == nil {
 		code := ""
@@ -131,6 +153,18 @@ func apiErrorFrom(resp *http.Response) error {
 		case nil:
 		default:
 			code = fmt.Sprint(v)
+		}
+		if parsed.Message == "" {
+			for _, e := range parsed.Errors { // JSON:API error objects
+				if e.Detail != "" {
+					parsed.Message = e.Detail
+					break
+				}
+				if e.Title != "" {
+					parsed.Message = e.Title
+					break
+				}
+			}
 		}
 		return &APIError{StatusCode: resp.StatusCode, Code: code, Message: parsed.Message}
 	}

@@ -7,7 +7,8 @@ working in this repository.
 
 `catalog-cli` is `sweetrpg-catalog`, a Go command-line client for `catalog-api`. It covers basic
 CRUD across catalog entity types (volume, publisher, studio, person, system, license, review,
-contribution), relationship linking/unlinking, and staged-asset upload. It talks to
+contribution), relationship linking/unlinking, and cover/sample asset upload against
+assets-web. It talks to
 `catalog-api`'s existing HTTP API only - no backend changes.
 
 ## Dependencies
