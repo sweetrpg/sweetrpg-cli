@@ -57,15 +57,49 @@
 				
 				<option value="file0">github.com/sweetrpg/catalog-cli/cmd/sweetrpg-catalog/main.go (0.0%)</option>
 				
-				<option value="file1">github.com/sweetrpg/catalog-cli/internal/client/api.go (84.5%)</option>
+				<option value="file1">github.com/sweetrpg/catalog-cli/internal/auth/auth.go (83.6%)</option>
 				
-				<option value="file2">github.com/sweetrpg/catalog-cli/internal/client/client.go (77.8%)</option>
+				<option value="file2">github.com/sweetrpg/catalog-cli/internal/auth/http.go (71.4%)</option>
 				
-				<option value="file3">github.com/sweetrpg/catalog-cli/internal/client/entities.go (100.0%)</option>
+				<option value="file3">github.com/sweetrpg/catalog-cli/internal/auth/keyring.go (27.3%)</option>
 				
-				<option value="file4">github.com/sweetrpg/catalog-cli/internal/cmd/root.go (0.0%)</option>
+				<option value="file4">github.com/sweetrpg/catalog-cli/internal/auth/source.go (81.7%)</option>
 				
-				<option value="file5">github.com/sweetrpg/catalog-cli/internal/config/config.go (97.1%)</option>
+				<option value="file5">github.com/sweetrpg/catalog-cli/internal/auth/token.go (91.2%)</option>
+				
+				<option value="file6">github.com/sweetrpg/catalog-cli/internal/client/api.go (84.5%)</option>
+				
+				<option value="file7">github.com/sweetrpg/catalog-cli/internal/client/assets.go (90.0%)</option>
+				
+				<option value="file8">github.com/sweetrpg/catalog-cli/internal/client/client.go (80.9%)</option>
+				
+				<option value="file9">github.com/sweetrpg/catalog-cli/internal/client/entities.go (100.0%)</option>
+				
+				<option value="file10">github.com/sweetrpg/catalog-cli/internal/client/volume_assets.go (91.7%)</option>
+				
+				<option value="file11">github.com/sweetrpg/catalog-cli/internal/cmd/assets.go (79.2%)</option>
+				
+				<option value="file12">github.com/sweetrpg/catalog-cli/internal/cmd/auth.go (17.9%)</option>
+				
+				<option value="file13">github.com/sweetrpg/catalog-cli/internal/cmd/crud.go (85.8%)</option>
+				
+				<option value="file14">github.com/sweetrpg/catalog-cli/internal/cmd/curl.go (87.5%)</option>
+				
+				<option value="file15">github.com/sweetrpg/catalog-cli/internal/cmd/entities.go (88.5%)</option>
+				
+				<option value="file16">github.com/sweetrpg/catalog-cli/internal/cmd/entity_table.go (49.0%)</option>
+				
+				<option value="file17">github.com/sweetrpg/catalog-cli/internal/cmd/format.go (53.8%)</option>
+				
+				<option value="file18">github.com/sweetrpg/catalog-cli/internal/cmd/link.go (88.9%)</option>
+				
+				<option value="file19">github.com/sweetrpg/catalog-cli/internal/cmd/resolve.go (54.8%)</option>
+				
+				<option value="file20">github.com/sweetrpg/catalog-cli/internal/cmd/root.go (93.1%)</option>
+				
+				<option value="file21">github.com/sweetrpg/catalog-cli/internal/cmd/search.go (86.4%)</option>
+				
+				<option value="file22">github.com/sweetrpg/catalog-cli/internal/config/config.go (97.6%)</option>
 				
 				</select>
 			</div>
@@ -91,6 +125,7 @@
 		<pre class="file" id="file0" style="display: none">package main
 
 import (
+        "errors"
         "os"
 
         "github.com/sweetrpg/catalog-cli/internal/cmd"
@@ -98,12 +133,730 @@ import (
 
 func main() <span class="cov0" title="0">{
         if err := cmd.Execute(); err != nil </span><span class="cov0" title="0">{
-                os.Exit(1)
-        }</span>
+                var ec cmd.ExitCoder
+                if errors.As(err, &amp;ec) </span><span class="cov0" title="0">{
+                        os.Exit(ec.ExitCode())
+                }</span>
+                <span class="cov0" title="0">os.Exit(1)</span>
+        }
 }
 </pre>
 		
-		<pre class="file" id="file1" style="display: none">package client
+		<pre class="file" id="file1" style="display: none">// Package auth implements login against Auth0 using the OAuth device
+// authorization grant, refresh-token storage in the OS keychain, and a
+// per-session TokenSource that refreshes transparently. Endpoints come from
+// build-time variables so no tenant details ship in source.
+package auth
+
+import (
+        "context"
+        "errors"
+        "fmt"
+        "net/http"
+        "net/url"
+        "os"
+        "strings"
+        "time"
+)
+
+// Build-time settings. Empty means auth is not configured; commands that need
+// it fail with a clear message instead of guessing a tenant.
+var (
+        Domain   string // e.g. "dev-abc123.us.auth0.com"
+        ClientID string
+        Audience string // catalog-api identifier
+        Scopes   = "openid profile email offline_access"
+)
+
+// Config is one resolved tenant + client pairing. Tests build it directly;
+// production resolves it from the vars above via DefaultConfig.
+type Config struct {
+        Domain   string
+        ClientID string
+        Audience string
+        Scopes   string
+
+        // PollIntervalFloor guards against servers reporting interval 0; RFC 8628
+        // suggests treating anything under 5s as 5s.
+        PollIntervalFloor time.Duration
+}
+
+// DefaultConfig resolves the build-time settings, falling back to
+// SWEETRPG_AUTH_DOMAIN / SWEETRPG_AUTH_CLIENT_ID / SWEETRPG_AUTH_AUDIENCE for
+// dev runs (plain `go run` bakes nothing in). It errors when neither source
+// provides a full configuration.
+func DefaultConfig() (*Config, error) <span class="cov3" title="3">{
+        domain := firstNonEmpty(Domain, os.Getenv("SWEETRPG_AUTH_DOMAIN"))
+        clientID := firstNonEmpty(ClientID, os.Getenv("SWEETRPG_AUTH_CLIENT_ID"))
+        audience := firstNonEmpty(Audience, os.Getenv("SWEETRPG_AUTH_AUDIENCE"))
+        if domain == "" || clientID == "" || audience == "" </span><span class="cov2" title="2">{
+                return nil, fmt.Errorf("auth is not configured: set SWEETRPG_AUTH_DOMAIN, SWEETRPG_AUTH_CLIENT_ID, and SWEETRPG_AUTH_AUDIENCE (or rebuild with -ldflags setting sweetrpg.auth domain, client id, and audience)")
+        }</span>
+        <span class="cov1" title="1">return &amp;Config{Domain: domain, ClientID: clientID, Audience: audience, Scopes: Scopes}, nil</span>
+}
+
+func firstNonEmpty(values ...string) string <span class="cov6" title="9">{
+        for _, v := range values </span><span class="cov8" title="18">{
+                if v != "" </span><span class="cov5" title="5">{
+                        return v
+                }</span>
+        }
+        <span class="cov4" title="4">return ""</span>
+}
+
+func (c *Config) validate() error <span class="cov6" title="9">{
+        switch </span>{
+        case c == nil:<span class="cov0" title="0">
+                return errors.New("nil auth config")</span>
+        case c.Domain == "":<span class="cov0" title="0">
+                return errors.New("auth config missing domain")</span>
+        case c.ClientID == "":<span class="cov0" title="0">
+                return errors.New("auth config missing client id")</span>
+        }
+        <span class="cov6" title="9">return nil</span>
+}
+
+// DeviceCode is the start of one authorization attempt.
+type DeviceCode struct {
+        DeviceCode              string `json:"device_code"`
+        UserCode                string `json:"user_code"`
+        VerificationURI         string `json:"verification_uri"`
+        VerificationURIComplete string `json:"verification_uri_complete"`
+        ExpiresIn               int    `json:"expires_in"` // seconds
+        Interval                int    `json:"interval"`   // seconds
+
+        // startedAt anchors ExpiresIn so AwaitAuthorization can detect expiry;
+        // pollFloor overrides the minimum interval in tests.
+        startedAt time.Time
+        pollFloor time.Duration
+}
+
+func (d *DeviceCode) interval() time.Duration <span class="cov6" title="9">{
+        floor := d.floor()
+        if d.Interval &lt;= 0 </span><span class="cov0" title="0">{
+                return floor
+        }</span>
+        <span class="cov6" title="9">dur := time.Duration(d.Interval) * time.Second
+        if dur &lt; floor </span><span class="cov4" title="4">{
+                return floor
+        }</span>
+        <span class="cov5" title="5">return dur</span>
+}
+
+func (d *DeviceCode) floor() time.Duration <span class="cov6" title="9">{
+        if d.pollFloor &gt; 0 </span><span class="cov0" title="0">{
+                return d.pollFloor
+        }</span>
+        <span class="cov6" title="9">return defaultPollFloor</span>
+}
+
+func (d *DeviceCode) deadline() time.Time <span class="cov3" title="3">{
+        return d.startedAt.Add(time.Duration(d.ExpiresIn) * time.Second)
+}</span>
+
+// pollFloor/startedAt are test hooks set by RequestDeviceCode.
+const defaultPollFloor = 5 * time.Second
+
+// TokenResponse is a successful token endpoint reply. RefreshToken may be
+// empty on refresh grants that do not rotate it.
+type TokenResponse struct {
+        AccessToken  string `json:"access_token"`
+        IDToken      string `json:"id_token"`
+        RefreshToken string `json:"refresh_token"`
+        TokenType    string `json:"token_type"`
+        ExpiresIn    int    `json:"expires_in"`
+        Scope        string `json:"scope"`
+}
+
+// PollStatus classifies one token-endpoint poll result.
+type PollStatus int
+
+const (
+        StatusAuthorized PollStatus = iota
+        StatusPending               // user has not approved yet - keep polling
+        StatusSlowDown              // polling too fast - back off and keep polling
+)
+
+// ErrDenied and ErrExpired end the flow; every other error is transport or
+// server trouble surfaced to the caller as-is.
+var (
+        ErrDenied  = errors.New("authorization denied")
+        ErrExpired = errors.New("device code expired before authorization completed")
+        ErrPending = errors.New("authorization pending")
+)
+
+// requestDeviceCode starts the device grant against cfg's tenant.
+func requestDeviceCode(ctx context.Context, hc *http.Client, cfg *Config) (*DeviceCode, error) <span class="cov4" title="4">{
+        if err := cfg.validate(); err != nil </span><span class="cov0" title="0">{
+                return nil, err
+        }</span>
+        <span class="cov4" title="4">form := url.Values{
+                "client_id": {cfg.ClientID},
+                "scope":     {cfg.Scopes},
+                "audience":  {cfg.Audience},
+        }
+        var dc DeviceCode
+        if err := postForm(ctx, hc, cfg.deviceCodeURL(), form, &amp;dc); err != nil </span><span class="cov0" title="0">{
+                return nil, fmt.Errorf("requesting device code: %w", err)
+        }</span>
+        <span class="cov4" title="4">if dc.DeviceCode == "" </span><span class="cov0" title="0">{
+                return nil, fmt.Errorf("device code response missing device_code")
+        }</span>
+        <span class="cov4" title="4">dc.startedAt = time.Now()
+        return &amp;dc, nil</span>
+}
+
+// pollToken performs exactly one token poll. The returned status tells the
+// caller whether to keep going; slowDownExtra reports how much longer to wait
+// after a StatusSlowDown.
+func pollToken(ctx context.Context, hc *http.Client, cfg *Config, dc *DeviceCode) (*TokenResponse, PollStatus, time.Duration, error) <span class="cov7" title="14">{
+        form := url.Values{
+                "grant_type":  {"urn:ietf:params:oauth:grant-type:device_code"},
+                "client_id":   {cfg.ClientID},
+                "device_code": {dc.DeviceCode},
+        }
+        var out TokenResponse
+        err := postForm(ctx, hc, cfg.tokenURL(), form, &amp;out)
+        if err == nil </span><span class="cov5" title="5">{
+                if out.AccessToken == "" </span><span class="cov0" title="0">{
+                        return nil, 0, 0, fmt.Errorf("token response missing access_token")
+                }</span>
+                <span class="cov5" title="5">return &amp;out, StatusAuthorized, 0, nil</span>
+        }
+
+        <span class="cov6" title="9">var te *endpointError
+        if !errors.As(err, &amp;te) </span><span class="cov0" title="0">{
+                return nil, 0, 0, err
+        }</span>
+        <span class="cov6" title="9">switch te.Code </span>{
+        case "authorization_pending":<span class="cov3" title="3">
+                return nil, StatusPending, 0, nil</span>
+        case "slow_down":<span class="cov2" title="2">
+                return nil, StatusSlowDown, slowDownExtra, nil</span>
+        case "access_denied":<span class="cov2" title="2">
+                return nil, 0, 0, fmt.Errorf("%w: %s", ErrDenied, te.Description)</span>
+        case "expired_token", "invalid_grant":<span class="cov1" title="1">
+                return nil, 0, 0, fmt.Errorf("%w (%s)", ErrExpired, te.Code)</span>
+        default:<span class="cov1" title="1">
+                return nil, 0, 0, fmt.Errorf("token endpoint rejected poll: %s: %s", te.Code, te.Description)</span>
+        }
+}
+
+// slowDownExtra is the RFC 8628 penalty added to the interval on slow_down.
+const slowDownExtra = 5 * time.Second
+
+// AwaitAuthorization runs the polling loop until the user approves, denies,
+// the code expires, or ctx is cancelled. sleep is called between polls with
+// the delay to observe; production passes a context-aware sleeper.
+func AwaitAuthorization(ctx context.Context, hc *http.Client, cfg *Config, dc *DeviceCode, sleep func(context.Context, time.Duration) error) (*TokenResponse, error) <span class="cov5" title="6">{
+        delay := dc.interval()
+        for </span><span class="cov6" title="8">{
+                select </span>{
+                case &lt;-ctx.Done():<span class="cov0" title="0">
+                        return nil, ctx.Err()</span>
+                default:<span class="cov6" title="8"></span>
+                }
+                <span class="cov6" title="8">tok, status, extra, err := pollToken(ctx, hc, cfg, dc)
+                if err != nil </span><span class="cov1" title="1">{
+                        return nil, err
+                }</span>
+                <span class="cov6" title="7">switch status </span>{
+                case StatusAuthorized:<span class="cov4" title="4">
+                        return tok, nil</span>
+                case StatusSlowDown:<span class="cov1" title="1">
+                        delay += extra</span>
+                case StatusPending:<span class="cov2" title="2"></span>
+                        // fall through to sleep
+                }
+                <span class="cov3" title="3">if time.Now().Add(delay).After(dc.deadline()) </span><span class="cov1" title="1">{
+                        return nil, ErrExpired
+                }</span>
+                <span class="cov2" title="2">if err := sleep(ctx, delay); err != nil </span><span class="cov0" title="0">{
+                        return nil, err
+                }</span>
+        }
+}
+
+func (c *Config) deviceCodeURL() string <span class="cov4" title="4">{ return c.baseURL() + "/oauth/device/code" }</span>
+func (c *Config) tokenURL() string      <span class="cov9" title="22">{ return c.baseURL() + "/oauth/token" }</span>
+func (c *Config) revokeURL() string     <span class="cov2" title="2">{ return c.baseURL() + "/oauth/revoke" }</span>
+
+func (c *Config) baseURL() string <span class="cov10" title="31">{
+        d := strings.TrimSuffix(c.Domain, "/")
+        if strings.HasPrefix(d, "http://") || strings.HasPrefix(d, "https://") </span><span class="cov9" title="29">{
+                return d
+        }</span>
+        <span class="cov2" title="2">return "https://" + d</span>
+}
+</pre>
+		
+		<pre class="file" id="file2" style="display: none">package auth
+
+import (
+        "bytes"
+        "context"
+        "encoding/json"
+        "fmt"
+        "io"
+        "net/http"
+        "net/url"
+        "strings"
+        "time"
+)
+
+// endpointError is a structured OAuth error payload ({error,
+// error_description}) returned by Auth0 endpoints. Code carries the OAuth
+// error name ("authorization_pending", "slow_down", ...).
+type endpointError struct {
+        StatusCode  int
+        Code        string
+        Description string
+}
+
+func (e *endpointError) Error() string <span class="cov1" title="1">{
+        if e.Description == "" </span><span class="cov1" title="1">{
+                return fmt.Sprintf("auth endpoint returned %d (%s)", e.StatusCode, e.Code)
+        }</span>
+        <span class="cov0" title="0">return fmt.Sprintf("auth endpoint returned %d %s: %s", e.StatusCode, e.Code, e.Description)</span>
+}
+
+// postForm sends one form-urlencoded request and decodes the JSON reply into
+// out. Non-2xx replies become *endpointError.
+func postForm(ctx context.Context, hc *http.Client, endpoint string, form url.Values, out any) error <span class="cov10" title="27">{
+        req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, strings.NewReader(form.Encode()))
+        if err != nil </span><span class="cov0" title="0">{
+                return err
+        }</span>
+        <span class="cov10" title="27">req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+        resp, err := hc.Do(req)
+        if err != nil </span><span class="cov0" title="0">{
+                return err
+        }</span>
+        <span class="cov10" title="27">defer func() </span><span class="cov10" title="27">{ _, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 1&lt;&lt;20)); _ = resp.Body.Close() }</span>()
+
+        <span class="cov10" title="27">body, err := io.ReadAll(io.LimitReader(resp.Body, 1&lt;&lt;20))
+        if err != nil </span><span class="cov0" title="0">{
+                return fmt.Errorf("reading auth response: %w", err)
+        }</span>
+        <span class="cov10" title="27">if resp.StatusCode &lt; 200 || resp.StatusCode &gt;= 300 </span><span class="cov8" title="13">{
+                te := &amp;endpointError{StatusCode: resp.StatusCode}
+                var parsed struct {
+                        Error       string `json:"error"`
+                        Description string `json:"error_description"`
+                }
+                if json.Unmarshal(body, &amp;parsed) == nil &amp;&amp; parsed.Error != "" </span><span class="cov7" title="12">{
+                        te.Code = parsed.Error
+                        te.Description = parsed.Description
+                }</span> else<span class="cov1" title="1"> {
+                        te.Code = "unparseable_response"
+                        te.Description = strings.TrimSpace(string(body))
+                }</span>
+                <span class="cov8" title="13">return te</span>
+        }
+        // Endpoints like /oauth/revoke reply 2xx with an empty body; nothing to decode.
+        <span class="cov8" title="14">if len(bytes.TrimSpace(body)) == 0 </span><span class="cov1" title="1">{
+                return nil
+        }</span>
+        <span class="cov8" title="13">if err := json.Unmarshal(body, out); err != nil </span><span class="cov0" title="0">{
+                return fmt.Errorf("decoding auth response: %w", err)
+        }</span>
+        <span class="cov8" title="13">return nil</span>
+}
+
+// SleepContext is the production sleeper: waits d or until ctx is done.
+func SleepContext(ctx context.Context, d time.Duration) error <span class="cov0" title="0">{
+        t := time.NewTimer(d)
+        defer t.Stop()
+        select </span>{
+        case &lt;-ctx.Done():<span class="cov0" title="0">
+                return ctx.Err()</span>
+        case &lt;-t.C:<span class="cov0" title="0">
+                return nil</span>
+        }
+}
+</pre>
+		
+		<pre class="file" id="file3" style="display: none">package auth
+
+import (
+        "encoding/json"
+        "errors"
+        "fmt"
+
+        "github.com/zalando/go-keyring"
+)
+
+// ServiceName is the OS-keychain service all CLI credentials live under.
+const ServiceName = "sweetrpg-catalog-cli"
+
+// currentAccountKey is the pointer record naming which subject's credentials
+// are active. It keeps the design "account = authenticated subject" while
+// letting commands find credentials without knowing the sub up front.
+const currentAccountKey = "current"
+
+// ErrNotLoggedIn means no usable stored credentials exist. Callers map it to
+// exit code 3 with a pointer at `auth login`.
+var ErrNotLoggedIn = errors.New("not logged in: run 'sweetrpg-catalog auth login'")
+
+// Session is what persists between runs: who logged in and the refresh token
+// that proves it. Access tokens are never persisted - they are short-lived
+// and re-derived from the refresh token.
+type Session struct {
+        Account      string `json:"account"`
+        Email        string `json:"email,omitempty"`
+        RefreshToken string `json:"refresh_token"`
+}
+
+// Store abstracts credential persistence so commands stay testable and so a
+// broken keychain degrades to session-only use instead of plaintext files.
+type Store interface {
+        Save(Session) error
+        Load() (*Session, error)
+        Delete() error
+}
+
+// KeyringStore persists sessions in the OS keychain via go-keyring.
+type KeyringStore struct{}
+
+var _ Store = KeyringStore{}
+
+func (KeyringStore) Save(s Session) error <span class="cov1" title="1">{
+        if s.Account == "" || s.RefreshToken == "" </span><span class="cov1" title="1">{
+                return fmt.Errorf("refusing to store incomplete session")
+        }</span>
+        <span class="cov0" title="0">blob, err := json.Marshal(s)
+        if err != nil </span><span class="cov0" title="0">{
+                return err
+        }</span>
+        <span class="cov0" title="0">if err := keyring.Set(ServiceName, currentAccountKey, s.Account); err != nil </span><span class="cov0" title="0">{
+                return err
+        }</span>
+        <span class="cov0" title="0">return keyring.Set(ServiceName, s.Account, string(blob))</span>
+}
+
+func (KeyringStore) Load() (*Session, error) <span class="cov0" title="0">{
+        account, err := keyring.Get(ServiceName, currentAccountKey)
+        if err != nil </span><span class="cov0" title="0">{
+                if errors.Is(err, keyring.ErrNotFound) </span><span class="cov0" title="0">{
+                        return nil, ErrNotLoggedIn
+                }</span>
+                <span class="cov0" title="0">return nil, err</span>
+        }
+        <span class="cov0" title="0">blob, err := keyring.Get(ServiceName, account)
+        if err != nil </span><span class="cov0" title="0">{
+                if errors.Is(err, keyring.ErrNotFound) </span><span class="cov0" title="0">{
+                        return nil, ErrNotLoggedIn
+                }</span>
+                <span class="cov0" title="0">return nil, err</span>
+        }
+        <span class="cov0" title="0">var s Session
+        if err := json.Unmarshal([]byte(blob), &amp;s); err != nil </span><span class="cov0" title="0">{
+                return nil, fmt.Errorf("stored credentials are unreadable: %w", err)
+        }</span>
+        <span class="cov0" title="0">return &amp;s, nil</span>
+}
+
+func (KeyringStore) Delete() error <span class="cov0" title="0">{
+        account, err := keyring.Get(ServiceName, currentAccountKey)
+        if err != nil </span><span class="cov0" title="0">{
+                if errors.Is(err, keyring.ErrNotFound) </span><span class="cov0" title="0">{
+                        return nil // idempotent logout
+                }</span>
+                <span class="cov0" title="0">return err</span>
+        }
+        <span class="cov0" title="0">del := keyring.Delete(ServiceName, account)
+        ptr := keyring.Delete(ServiceName, currentAccountKey)
+        if del != nil &amp;&amp; !errors.Is(del, keyring.ErrNotFound) </span><span class="cov0" title="0">{
+                return del
+        }</span>
+        <span class="cov0" title="0">if ptr != nil &amp;&amp; !errors.Is(ptr, keyring.ErrNotFound) </span><span class="cov0" title="0">{
+                return ptr
+        }</span>
+        <span class="cov0" title="0">return nil</span>
+}
+
+// MemoryStore is an in-process Store for tests and for holding a session that
+// could not be persisted (the refuse-to-persist fallback keeps it in memory
+// for the rest of the run only).
+type MemoryStore struct {
+        session *Session
+}
+
+var _ Store = (*MemoryStore)(nil)
+
+func NewMemoryStore() *MemoryStore <span class="cov9" title="9">{ return &amp;MemoryStore{} }</span>
+
+func (m *MemoryStore) Save(s Session) error <span class="cov8" title="7">{
+        cp := s
+        m.session = &amp;cp
+        return nil
+}</span>
+
+func (m *MemoryStore) Load() (*Session, error) <span class="cov10" title="11">{
+        if m.session == nil </span><span class="cov7" title="5">{
+                return nil, ErrNotLoggedIn
+        }</span>
+        <span class="cov7" title="6">cp := *m.session
+        return &amp;cp, nil</span>
+}
+
+func (m *MemoryStore) Delete() error <span class="cov6" title="4">{
+        m.session = nil
+        return nil
+}</span>
+</pre>
+		
+		<pre class="file" id="file4" style="display: none">package auth
+
+import (
+        "context"
+        "errors"
+        "fmt"
+        "io"
+        "net/http"
+        "os"
+        "sync"
+        "time"
+)
+
+// stderrWriter keeps warnings out of stdout so scripted pipelines that parse
+// output stay clean.
+var stderrWriter io.Writer = os.Stderr
+
+// AuthError marks failures that need `auth login` again. The command layer
+// maps them to exit code 3.
+type AuthError struct{ Msg string }
+
+func (e *AuthError) Error() string <span class="cov0" title="0">{ return e.Msg }</span>
+
+// IsAuthRequired reports whether err should exit 3 with a login hint.
+func IsAuthRequired(err error) bool <span class="cov0" title="0">{
+        var ae *AuthError
+        if errors.As(err, &amp;ae) </span><span class="cov0" title="0">{
+                return true
+        }</span>
+        <span class="cov0" title="0">return errors.Is(err, ErrNotLoggedIn) || errors.Is(err, ErrExpired) || errors.Is(err, ErrDenied)</span>
+}
+
+// SessionSource supplies bearer tokens for one logged-in session, refreshing
+// transparently and persisting rotations.
+type SessionSource struct {
+        Cfg   *Config
+        HTTP  *http.Client
+        Store Store
+
+        mu      sync.Mutex
+        cached  AccessToken
+        session *Session
+
+        // RotateSaveErr records a failed save after refresh-token rotation: the
+        // current run keeps working, but the next run will need to log in again.
+        RotateSaveErr error
+}
+
+// Token returns a valid bearer token, refreshing on expiry or first use.
+func (s *SessionSource) Token(ctx context.Context) (string, error) <span class="cov10" title="4">{
+        s.mu.Lock()
+        defer s.mu.Unlock()
+
+        now := time.Now()
+        if s.cached.Valid(now) </span><span class="cov1" title="1">{
+                return s.cached.Token, nil
+        }</span>
+
+        <span class="cov8" title="3">sess := s.session
+        if sess == nil </span><span class="cov8" title="3">{
+                loaded, err := s.Store.Load()
+                if err != nil </span><span class="cov1" title="1">{
+                        return "", err
+                }</span>
+                <span class="cov5" title="2">sess = loaded
+                s.session = sess</span>
+        }
+
+        <span class="cov5" title="2">tok, err := RefreshAccessToken(ctx, s.HTTP, s.Cfg, sess.RefreshToken)
+        if err != nil </span><span class="cov1" title="1">{
+                if errors.Is(err, ErrExpired) || errors.Is(err, ErrDenied) </span><span class="cov1" title="1">{
+                        _ = s.Store.Delete()
+                        s.session = nil
+                        return "", &amp;AuthError{Msg: "your session has been revoked or expired: run 'sweetrpg-catalog auth login'"}
+                }</span>
+                <span class="cov0" title="0">return "", err</span>
+        }
+
+        <span class="cov1" title="1">s.cached = AccessToken{
+                Token:     tok.AccessToken,
+                ExpiresAt: now.Add(time.Duration(tok.ExpiresIn) * time.Second),
+        }
+        if tok.RefreshToken != sess.RefreshToken </span><span class="cov1" title="1">{
+                sess.RefreshToken = tok.RefreshToken
+                if saveErr := s.Store.Save(*sess); saveErr != nil &amp;&amp; s.RotateSaveErr == nil </span><span class="cov0" title="0">{
+                        s.RotateSaveErr = saveErr
+                }</span>
+        }
+        <span class="cov1" title="1">return s.cached.Token, nil</span>
+}
+
+// Login performs the full device flow and persists the resulting session.
+// sleep is injectable for tests; production passes SleepContext. openURL,
+// when non-nil, is tried with the verification URL as a convenience.
+func Login(ctx context.Context, hc *http.Client, cfg *Config, st Store, sleep func(context.Context, time.Duration) error, openURL func(string)) (*Claims, error) <span class="cov8" title="3">{
+        dc, err := requestDeviceCode(ctx, hc, cfg)
+        if err != nil </span><span class="cov0" title="0">{
+                return nil, err
+        }</span>
+        <span class="cov8" title="3">target := dc.VerificationURIComplete
+        if target == "" </span><span class="cov5" title="2">{
+                target = dc.VerificationURI
+        }</span>
+        <span class="cov8" title="3">fmt.Printf("Open %s\nEnter code: %s\n", target, dc.UserCode)
+        if openURL != nil &amp;&amp; target != "" </span><span class="cov1" title="1">{
+                openURL(target)
+        }</span>
+        <span class="cov8" title="3">fmt.Println("Waiting for authorization...")
+
+        tok, err := AwaitAuthorization(ctx, hc, cfg, dc, sleep)
+        if err != nil </span><span class="cov0" title="0">{
+                return nil, err
+        }</span>
+        <span class="cov8" title="3">if tok.RefreshToken == "" </span><span class="cov1" title="1">{
+                return nil, fmt.Errorf("login succeeded but no refresh token was granted; check offline_access scope")
+        }</span>
+        <span class="cov5" title="2">claims, err := ParseIDTokenClaims(tok.IDToken)
+        if err != nil </span><span class="cov0" title="0">{
+                return nil, err
+        }</span>
+        <span class="cov5" title="2">sess := Session{Account: claims.Subject, Email: claims.Email, RefreshToken: tok.RefreshToken}
+        if err := st.Save(sess); err != nil </span><span class="cov1" title="1">{
+                // Refuse-to-persist fallback: never fall back to plaintext files.
+                return claims, fmt.Errorf("credentials could not be saved to the OS keychain (%v); they work for this command only and you must log in again next time", err)
+        }</span>
+        <span class="cov1" title="1">return claims, nil</span>
+}
+
+// Logout revokes the stored refresh token server-side (best effort) and
+// deletes local credentials. Missing credentials are not an error, so logout
+// is idempotent; the bool reports whether credentials existed.
+func Logout(ctx context.Context, hc *http.Client, cfg *Config, st Store) (bool, error) <span class="cov8" title="3">{
+        sess, err := st.Load()
+        if errors.Is(err, ErrNotLoggedIn) </span><span class="cov1" title="1">{
+                return false, nil
+        }</span>
+        <span class="cov5" title="2">if err != nil </span><span class="cov0" title="0">{
+                return true, err
+        }</span>
+        <span class="cov5" title="2">if revokeErr := RevokeRefreshToken(ctx, hc, cfg, sess.RefreshToken); revokeErr != nil </span><span class="cov1" title="1">{
+                _, _ = fmt.Fprintf(stderrWriter, "warning: server-side revocation failed (%v); removing local credentials anyway\n", revokeErr)
+        }</span>
+        <span class="cov5" title="2">return true, st.Delete()</span>
+}
+</pre>
+		
+		<pre class="file" id="file5" style="display: none">package auth
+
+import (
+        "context"
+        "encoding/base64"
+        "encoding/json"
+        "fmt"
+        "net/http"
+        "net/url"
+        "strings"
+        "time"
+)
+
+// Claims are the ID-token fields the CLI cares about. The token arrives
+// directly from Auth0 over TLS in this process, so fields are read without
+// signature verification - verification is Auth0's job here.
+type Claims struct {
+        Subject string `json:"sub"`
+        Email   string `json:"email"`
+}
+
+// ParseIDTokenClaims decodes the payload segment of a JWT. It returns an
+// error for malformed tokens rather than guessing.
+func ParseIDTokenClaims(idToken string) (*Claims, error) <span class="cov10" title="8">{
+        parts := strings.Split(idToken, ".")
+        if len(parts) != 3 || parts[0] == "" || parts[1] == "" </span><span class="cov4" title="2">{
+                return nil, fmt.Errorf("id_token is not a JWT")
+        }</span>
+        <span class="cov8" title="6">payload, err := base64.RawURLEncoding.DecodeString(parts[1])
+        if err != nil </span><span class="cov1" title="1">{
+                return nil, fmt.Errorf("decoding id_token payload: %w", err)
+        }</span>
+        <span class="cov7" title="5">var c Claims
+        if err := json.Unmarshal(payload, &amp;c); err != nil </span><span class="cov1" title="1">{
+                return nil, fmt.Errorf("parsing id_token claims: %w", err)
+        }</span>
+        <span class="cov7" title="4">if c.Subject == "" </span><span class="cov1" title="1">{
+                return nil, fmt.Errorf("id_token has no sub claim")
+        }</span>
+        <span class="cov5" title="3">return &amp;c, nil</span>
+}
+
+// RefreshAccessToken exchanges a refresh token for a fresh token set. When
+// Auth0 rotates the refresh token the new one is in RefreshToken; otherwise
+// that field is empty and the caller keeps the old one.
+func RefreshAccessToken(ctx context.Context, hc *http.Client, cfg *Config, refreshToken string) (*TokenResponse, error) <span class="cov7" title="5">{
+        if err := cfg.validate(); err != nil </span><span class="cov0" title="0">{
+                return nil, err
+        }</span>
+        <span class="cov7" title="5">form := url.Values{
+                "grant_type":    {"refresh_token"},
+                "client_id":     {cfg.ClientID},
+                "refresh_token": {refreshToken},
+        }
+        var out TokenResponse
+        if err := postForm(ctx, hc, cfg.tokenURL(), form, &amp;out); err != nil </span><span class="cov4" title="2">{
+                var te *endpointError
+                if asEndpointError(err, &amp;te) &amp;&amp; (te.Code == "invalid_grant" || te.Code == "forbidden") </span><span class="cov4" title="2">{
+                        return nil, fmt.Errorf("%w: refresh token rejected by server (%s)", ErrExpired, te.Code)
+                }</span>
+                <span class="cov0" title="0">return nil, fmt.Errorf("refreshing access token: %w", err)</span>
+        }
+        <span class="cov5" title="3">if out.AccessToken == "" </span><span class="cov0" title="0">{
+                return nil, fmt.Errorf("refresh response missing access_token")
+        }</span>
+        <span class="cov5" title="3">if out.RefreshToken == "" </span><span class="cov1" title="1">{
+                out.RefreshToken = refreshToken
+        }</span>
+        <span class="cov5" title="3">return &amp;out, nil</span>
+}
+
+// RevokeRefreshToken asks Auth0 to invalidate the refresh token. Failures are
+// returned but logout treats them as non-fatal.
+func RevokeRefreshToken(ctx context.Context, hc *http.Client, cfg *Config, refreshToken string) error <span class="cov4" title="2">{
+        form := url.Values{
+                "client_id":     {cfg.ClientID},
+                "client_secret": {""}, // omitted below when empty
+                "token":         {refreshToken},
+        }
+        delete(form, "client_secret")
+        return postForm(ctx, hc, cfg.revokeURL(), form, &amp;struct{}{})
+}</span>
+
+func asEndpointError(err error, target **endpointError) bool <span class="cov4" title="2">{
+        te, ok := err.(*endpointError)
+        if ok </span><span class="cov4" title="2">{
+                *target = te
+        }</span>
+        <span class="cov4" title="2">return ok</span>
+}
+
+// AccessToken pairs a bearer token with its expiry for session caching.
+type AccessToken struct {
+        Token     string
+        ExpiresAt time.Time
+}
+
+// Valid reports whether the token can still be used with margin to spare so
+// requests never race the expiry clock mid-flight.
+func (a AccessToken) Valid(now time.Time) bool <span class="cov10" title="8">{
+        return a.Token != "" &amp;&amp; now.Before(a.ExpiresAt.Add(-30*time.Second))
+}</span>
+</pre>
+		
+		<pre class="file" id="file6" style="display: none">package client
 
 import (
         "context"
@@ -166,9 +919,9 @@ type WriteDisposition struct {
 
 // Get fetches one entity by ID into out (a *vo.X). A 404 yields an *APIError
 // with StatusCode 404 (see IsNotFound).
-func Get[T any](ctx context.Context, c *Client, plural, id string) (*T, error) <span class="cov10" title="5">{
+func Get[T any](ctx context.Context, c *Client, plural, id string) (*T, error) <span class="cov10" title="6">{
         resp, err := c.do(ctx, "GET", c.buildURL(plural, "/"+id, nil), nil, "")
-        if err != nil </span><span class="cov7" title="3">{
+        if err != nil </span><span class="cov7" title="4">{
                 return nil, err
         }</span>
         <span class="cov4" title="2">defer drainAndClose(resp)
@@ -181,16 +934,16 @@ func Get[T any](ctx context.Context, c *Client, plural, id string) (*T, error) <
 
 // decodeList reads a JSON:API collection document into a typed slice. The
 // result is never nil; an empty page is an empty slice.
-func decodeList[T any](resp *http.Response, what string) ([]*T, error) <span class="cov7" title="3">{
+func decodeList[T any](resp *http.Response, what string) ([]*T, error) <span class="cov6" title="3">{
         models, err := jsonapi.UnmarshalManyPayload(resp.Body, reflect.TypeOf((*T)(nil)))
         if err != nil </span><span class="cov0" title="0">{
                 return nil, fmt.Errorf("decoding %s: %w", what, err)
         }</span>
-        <span class="cov7" title="3">out := make([]*T, 0, len(models))
+        <span class="cov6" title="3">out := make([]*T, 0, len(models))
         for _, m := range models </span><span class="cov4" title="2">{
                 out = append(out, m.(*T))
         }</span>
-        <span class="cov7" title="3">return out, nil</span>
+        <span class="cov6" title="3">return out, nil</span>
 }
 
 // List fetches entities matching opts. The result is never nil; an empty page
@@ -240,18 +993,18 @@ func Create[T any](ctx context.Context, c *Client, plural string, entity *T) (*T
 // live record plus how the server disposed of the change. When disposition.
 // Submitted is true the live record is nil and Version/State/Message describe
 // the proposed change.
-func Patch[T any](ctx context.Context, c *Client, plural, id string, fields map[string]any) (*T, WriteDisposition, error) <span class="cov4" title="2">{
+func Patch[T any](ctx context.Context, c *Client, plural, id string, fields map[string]any) (*T, WriteDisposition, error) <span class="cov9" title="5">{
         body, err := sendJSON(fields)
         if err != nil </span><span class="cov0" title="0">{
                 return nil, WriteDisposition{}, err
         }</span>
-        <span class="cov4" title="2">resp, err := c.do(ctx, "PATCH", c.buildURL(plural, "/"+id, nil), body, "application/json")
+        <span class="cov9" title="5">resp, err := c.do(ctx, "PATCH", c.buildURL(plural, "/"+id, nil), body, "application/json")
         if err != nil </span><span class="cov0" title="0">{
                 return nil, WriteDisposition{}, err
         }</span>
-        <span class="cov4" title="2">defer drainAndClose(resp)
+        <span class="cov9" title="5">defer drainAndClose(resp)
 
-        if resp.StatusCode == 202 </span><span class="cov1" title="1">{
+        if resp.StatusCode == 202 </span><span class="cov4" title="2">{
                 var submitted struct {
                         Version int    `json:"version"`
                         State   string `json:"state"`
@@ -260,14 +1013,14 @@ func Patch[T any](ctx context.Context, c *Client, plural, id string, fields map[
                 if err := json.NewDecoder(resp.Body).Decode(&amp;submitted); err != nil </span><span class="cov0" title="0">{
                         return nil, WriteDisposition{}, fmt.Errorf("decoding submission response: %w", err)
                 }</span>
-                <span class="cov1" title="1">return nil, WriteDisposition{Submitted: true, Version: submitted.Version, State: submitted.State, Message: submitted.Message}, nil</span>
+                <span class="cov4" title="2">return nil, WriteDisposition{Submitted: true, Version: submitted.Version, State: submitted.State, Message: submitted.Message}, nil</span>
         }
 
-        <span class="cov1" title="1">var out T
+        <span class="cov6" title="3">var out T
         if err := jsonapi.UnmarshalPayload(resp.Body, &amp;out); err != nil </span><span class="cov0" title="0">{
                 return nil, WriteDisposition{}, fmt.Errorf("decoding patched %s: %w", plural, err)
         }</span>
-        <span class="cov1" title="1">return &amp;out, WriteDisposition{}, nil</span>
+        <span class="cov6" title="3">return &amp;out, WriteDisposition{}, nil</span>
 }
 
 // Delete issues the soft-delete request. Success is 204 No Content.
@@ -280,7 +1033,105 @@ func Delete(ctx context.Context, c *Client, plural, id string) error <span class
 }
 </pre>
 		
-		<pre class="file" id="file2" style="display: none">// Package client is a thin JSON:API client for catalog-api, typed against
+		<pre class="file" id="file7" style="display: none">package client
+
+import (
+        "bytes"
+        "context"
+        "fmt"
+        "mime/multipart"
+        "net/http"
+        "net/textproto"
+        "net/url"
+        "path/filepath"
+        "strings"
+)
+
+// Asset kinds the CLI writes. These are the live kinds: catalog-api's
+// finalize-session flow promotes staged assets to cover/&lt;volumeID&gt; and
+// sample/&lt;volumeID&gt;-&lt;n&gt;, so uploading straight to the live kind plus a PATCH
+// produces the same end state without an edit session (sessions have no REST
+// API - they are written directly to Redis by catalog-api/catalog-web).
+const (
+        AssetKindCover  = "cover"
+        AssetKindSample = "sample"
+)
+
+// AssetsClient talks to one assets-web deployment.
+type AssetsClient struct {
+        BaseURL *url.URL
+        HTTP    *http.Client
+        Tokens  TokenSource
+}
+
+// NewAssetsClient parses baseURL (must be absolute http(s)) and returns an
+// AssetsClient using the default HTTP transport.
+func NewAssetsClient(baseURL string, tokens TokenSource) (*AssetsClient, error) <span class="cov10" title="13">{
+        u, err := url.Parse(strings.TrimSpace(baseURL))
+        if err != nil || u.Scheme != "http" &amp;&amp; u.Scheme != "https" || u.Host == "" </span><span class="cov4" title="3">{
+                return nil, fmt.Errorf("invalid assets web base URL %q", baseURL)
+        }</span>
+        <span class="cov9" title="10">return &amp;AssetsClient{BaseURL: u, HTTP: http.DefaultClient, Tokens: tokens}, nil</span>
+}
+
+func (c *AssetsClient) assetURL(kind, id string) *url.URL <span class="cov7" title="7">{
+        u := *c.BaseURL
+        u.Path = strings.TrimRight(u.Path, "/") + "/asset/" + kind + "/" + id
+        return &amp;u
+}</span>
+
+// Upload stores data at assets-web's /asset/&lt;kind&gt;/&lt;id&gt;. The wire format is a
+// multipart form with one "file" part carrying the image bytes; the server
+// requires a non-empty filename and an image/png, image/jpeg, or image/webp
+// content type. Success is 201 Created.
+func (c *AssetsClient) Upload(ctx context.Context, kind, id string, data []byte, contentType string) error <span class="cov7" title="7">{
+        var buf bytes.Buffer
+        writer := multipart.NewWriter(&amp;buf)
+        // assets-web only needs a non-empty filename (it renames to image.&lt;ext&gt;);
+        // the id keeps stored parts identifiable. The per-part Content-Type is what
+        // the server validates against its allowlist.
+        header := textproto.MIMEHeader{}
+        header.Set("Content-Disposition", fmt.Sprintf(`form-data; name="file"; filename=%q`, id))
+        if contentType != "" </span><span class="cov7" title="7">{
+                header.Set("Content-Type", contentType)
+        }</span>
+        <span class="cov7" title="7">part, err := writer.CreatePart(header)
+        if err != nil </span><span class="cov0" title="0">{
+                return fmt.Errorf("assets: build multipart form: %w", err)
+        }</span>
+        <span class="cov7" title="7">if _, err := part.Write(data); err != nil </span><span class="cov0" title="0">{
+                return fmt.Errorf("assets: write multipart body: %w", err)
+        }</span>
+        <span class="cov7" title="7">if err := writer.Close(); err != nil </span><span class="cov0" title="0">{
+                return fmt.Errorf("assets: close multipart form: %w", err)
+        }</span>
+
+        <span class="cov7" title="7">resp, err := sendRequest(ctx, c.BaseURL, c.HTTP, c.Tokens, "assets-web",
+                http.MethodPost, c.assetURL(kind, id), &amp;buf, writer.FormDataContentType())
+        if err != nil </span><span class="cov4" title="3">{
+                return err
+        }</span>
+        <span class="cov5" title="4">drainAndClose(resp)
+        return nil</span>
+}
+
+// ContentTypeForFilename maps an image file extension to the MIME type
+// assets-web accepts, or an error naming the supported types.
+func ContentTypeForFilename(name string) (string, error) <span class="cov7" title="7">{
+        switch strings.ToLower(filepath.Ext(name)) </span>{
+        case ".png":<span class="cov3" title="2">
+                return "image/png", nil</span>
+        case ".jpg", ".jpeg":<span class="cov3" title="2">
+                return "image/jpeg", nil</span>
+        case ".webp":<span class="cov1" title="1">
+                return "image/webp", nil</span>
+        default:<span class="cov3" title="2">
+                return "", fmt.Errorf("unsupported image type %q: supported types are png, jpeg, webp", filepath.Ext(name))</span>
+        }
+}
+</pre>
+		
+		<pre class="file" id="file8" style="display: none">// Package client is a thin JSON:API client for catalog-api, typed against
 // catalog-objects.go value objects. It covers list/get/create/patch/delete for
 // every entity type plus the /search endpoints used for name resolution.
 package client
@@ -312,28 +1163,37 @@ type Client struct {
 
 // New parses baseURL (must be absolute http(s)) and returns a Client using the
 // default HTTP transport.
-func New(baseURL string, tokens TokenSource) (*Client, error) <span class="cov10" title="13">{
+func New(baseURL string, tokens TokenSource) (*Client, error) <span class="cov9" title="19">{
         u, err := url.Parse(strings.TrimSpace(baseURL))
         if err != nil || u.Scheme != "http" &amp;&amp; u.Scheme != "https" || u.Host == "" </span><span class="cov0" title="0">{
                 return nil, fmt.Errorf("invalid catalog API base URL %q", baseURL)
         }</span>
-        <span class="cov10" title="13">return &amp;Client{BaseURL: u, HTTP: http.DefaultClient, Tokens: tokens}, nil</span>
+        <span class="cov9" title="19">return &amp;Client{BaseURL: u, HTTP: http.DefaultClient, Tokens: tokens}, nil</span>
 }
 
 // APIError carries a non-2xx response's status and parsed body. Body shapes
-// vary by handler ({error,message} or {error}); anything unparseable keeps the
-// raw text in Message so operators see what the server said.
+// vary by handler ({error,message}, {message}, or {error}); anything
+// unparseable keeps the raw text in Message so operators see what the server
+// said.
 type APIError struct {
+        Service    string
         StatusCode int
         Code       string
         Message    string
 }
 
-func (e *APIError) Error() string <span class="cov0" title="0">{
+func (e *APIError) Error() string <span class="cov2" title="2">{
         if e.Message == "" </span><span class="cov0" title="0">{
-                return fmt.Sprintf("catalog-api returned %d (%s)", e.StatusCode, e.Code)
+                return fmt.Sprintf("%s returned %d (%s)", e.service(), e.StatusCode, e.Code)
         }</span>
-        <span class="cov0" title="0">return fmt.Sprintf("catalog-api returned %d %s: %s", e.StatusCode, e.Code, e.Message)</span>
+        <span class="cov2" title="2">return fmt.Sprintf("%s returned %d %s: %s", e.service(), e.StatusCode, e.Code, e.Message)</span>
+}
+
+func (e *APIError) service() string <span class="cov2" title="2">{
+        if e.Service == "" </span><span class="cov0" title="0">{
+                return "catalog-api"
+        }</span>
+        <span class="cov2" title="2">return e.Service</span>
 }
 
 // IsNotFound reports whether err is a 404 from the server.
@@ -351,84 +1211,109 @@ func IsAuthError(err error) bool <span class="cov4" title="3">{
         <span class="cov4" title="3">return apiErr.StatusCode == http.StatusUnauthorized || apiErr.StatusCode == http.StatusForbidden</span>
 }
 
-func (c *Client) buildURL(plural, pathSuffix string, query url.Values) *url.URL <span class="cov10" title="13">{
+func (c *Client) buildURL(plural, pathSuffix string, query url.Values) *url.URL <span class="cov9" title="17">{
         u := *c.BaseURL
         u.Path = strings.TrimRight(u.Path, "/") + "/" + plural + pathSuffix
-        if len(query) &gt; 0 </span><span class="cov3" title="2">{
+        if len(query) &gt; 0 </span><span class="cov2" title="2">{
                 u.RawQuery = query.Encode()
         }</span>
-        <span class="cov10" title="13">return &amp;u</span>
+        <span class="cov9" title="17">return &amp;u</span>
 }
 
-func (c *Client) do(ctx context.Context, method string, u *url.URL, body io.Reader, contentType string) (*http.Response, error) <span class="cov10" title="13">{
+func (c *Client) do(ctx context.Context, method string, u *url.URL, body io.Reader, contentType string) (*http.Response, error) <span class="cov9" title="17">{
+        return sendRequest(ctx, c.BaseURL, c.HTTP, c.Tokens, "catalog-api", method, u, body, contentType)
+}</span>
+
+// sendRequest is the shared request plumbing for both catalog-api and
+// assets-web: Accept header always, optional Content-Type, bearer token from
+// tokens when non-empty, and non-2xx mapped to *APIError naming service.
+func sendRequest(ctx context.Context, baseURL *url.URL, hc *http.Client, tokens TokenSource, service, method string, u *url.URL, body io.Reader, contentType string) (*http.Response, error) <span class="cov10" title="24">{
         req, err := http.NewRequestWithContext(ctx, method, u.String(), body)
         if err != nil </span><span class="cov0" title="0">{
                 return nil, err
         }</span>
-        <span class="cov10" title="13">req.Header.Set("Accept", MediaType)
-        if contentType != "" </span><span class="cov5" title="4">{
+        <span class="cov10" title="24">req.Header.Set("Accept", MediaType)
+        if contentType != "" </span><span class="cov8" title="14">{
                 req.Header.Set("Content-Type", contentType)
         }</span>
-        <span class="cov10" title="13">if c.Tokens != nil </span><span class="cov10" title="13">{
-                token, err := c.Tokens(ctx)
-                if err != nil </span><span class="cov0" title="0">{
+        <span class="cov10" title="24">if tokens != nil </span><span class="cov9" title="22">{
+                token, err := tokens(ctx)
+                if err != nil </span><span class="cov1" title="1">{
                         return nil, fmt.Errorf("resolving access token: %w", err)
                 }</span>
-                <span class="cov10" title="13">if token != "" </span><span class="cov10" title="13">{
+                <span class="cov9" title="21">if token != "" </span><span class="cov9" title="21">{
                         req.Header.Set("Authorization", "Bearer "+token)
                 }</span>
         }
-        <span class="cov10" title="13">resp, err := c.HTTP.Do(req)
+        <span class="cov9" title="23">resp, err := hc.Do(req)
         if err != nil </span><span class="cov0" title="0">{
                 return nil, err
         }</span>
-        <span class="cov10" title="13">if resp.StatusCode &lt; 200 || resp.StatusCode &gt;= 300 </span><span class="cov5" title="4">{
+        <span class="cov9" title="23">if resp.StatusCode &lt; 200 || resp.StatusCode &gt;= 300 </span><span class="cov6" title="7">{
                 defer drainAndClose(resp)
-                return nil, apiErrorFrom(resp)
+                apiErr := apiErrorFrom(resp).(*APIError)
+                apiErr.Service = service
+                return nil, apiErr
         }</span>
-        <span class="cov8" title="9">return resp, nil</span>
+        <span class="cov8" title="16">return resp, nil</span>
 }
 
 // drainAndClose reads any remaining body bytes so the connection is reusable
 // and closes it. Close errors are irrelevant once the response is consumed.
-func drainAndClose(resp *http.Response) <span class="cov9" title="12">{
+func drainAndClose(resp *http.Response) <span class="cov9" title="22">{
         _, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 1&lt;&lt;20))
         _ = resp.Body.Close()
 }</span>
 
-func apiErrorFrom(resp *http.Response) error <span class="cov5" title="4">{
+func apiErrorFrom(resp *http.Response) error <span class="cov6" title="7">{
         raw, err := io.ReadAll(io.LimitReader(resp.Body, 1&lt;&lt;20))
         if err != nil </span><span class="cov0" title="0">{
                 return &amp;APIError{StatusCode: resp.StatusCode, Message: "unreadable body"}
         }</span>
-        <span class="cov5" title="4">var parsed struct {
+        <span class="cov6" title="7">var parsed struct {
                 Error   any    `json:"error"`
                 Message string `json:"message"`
+                Errors  []struct {
+                        Detail string `json:"detail"`
+                        Title  string `json:"title"`
+                } `json:"errors"`
         }
-        if json.Unmarshal(raw, &amp;parsed) == nil </span><span class="cov5" title="4">{
+        if json.Unmarshal(raw, &amp;parsed) == nil </span><span class="cov6" title="7">{
                 code := ""
                 switch v := parsed.Error.(type) </span>{
                 case string:<span class="cov4" title="3">
                         code = v</span>
-                case nil:<span class="cov1" title="1"></span>
+                case nil:<span class="cov4" title="4"></span>
                 default:<span class="cov0" title="0">
                         code = fmt.Sprint(v)</span>
                 }
-                <span class="cov5" title="4">return &amp;APIError{StatusCode: resp.StatusCode, Code: code, Message: parsed.Message}</span>
+                <span class="cov6" title="7">if parsed.Message == "" </span><span class="cov4" title="4">{
+                        for _, e := range parsed.Errors </span><span class="cov1" title="1">{ // JSON:API error objects
+                                if e.Detail != "" </span><span class="cov1" title="1">{
+                                        parsed.Message = e.Detail
+                                        break</span>
+                                }
+                                <span class="cov0" title="0">if e.Title != "" </span><span class="cov0" title="0">{
+                                        parsed.Message = e.Title
+                                        break</span>
+                                }
+                        }
+                }
+                <span class="cov6" title="7">return &amp;APIError{StatusCode: resp.StatusCode, Code: code, Message: parsed.Message}</span>
         }
         <span class="cov0" title="0">return &amp;APIError{StatusCode: resp.StatusCode, Message: strings.TrimSpace(string(raw))}</span>
 }
 
-func sendJSON[T any](v T) (*bytes.Reader, error) <span class="cov5" title="4">{
+func sendJSON[T any](v T) (*bytes.Reader, error) <span class="cov6" title="7">{
         payload, err := json.Marshal(v)
         if err != nil </span><span class="cov0" title="0">{
                 return nil, err
         }</span>
-        <span class="cov5" title="4">return bytes.NewReader(payload), nil</span>
+        <span class="cov6" title="7">return bytes.NewReader(payload), nil</span>
 }
 </pre>
 		
-		<pre class="file" id="file3" style="display: none">package client
+		<pre class="file" id="file9" style="display: none">package client
 
 import "fmt"
 
@@ -463,23 +1348,1996 @@ func Lookup(name string) (EntityType, error) <span class="cov10" title="9">{
 }
 </pre>
 		
-		<pre class="file" id="file4" style="display: none">package cmd
+		<pre class="file" id="file10" style="display: none">package client
 
-import "github.com/spf13/cobra"
+import (
+        "context"
+        "fmt"
+
+        "github.com/sweetrpg/catalog-objects.go/vo"
+)
+
+// maxVolumeSamples mirrors catalog-api's cap; failing here saves a round trip
+// and keeps the error message identical in shape.
+const maxVolumeSamples = 5
+
+// SetVolumeCover uploads image as the volume's live cover asset
+// (cover/&lt;volumeID&gt; on assets-web) and links it via PATCH. Admins/editors get
+// a live write back; submitters get a submitted change (the server rejects
+// coverAssetId from submitter roles, surfacing that as an *APIError).
+func SetVolumeCover(ctx context.Context, c *Client, assets *AssetsClient, volumeID string, image []byte, contentType string) (*vo.VolumeVO, WriteDisposition, error) <span class="cov6" title="2">{
+        if err := assets.Upload(ctx, AssetKindCover, volumeID, image, contentType); err != nil </span><span class="cov1" title="1">{
+                return nil, WriteDisposition{}, fmt.Errorf("uploading cover: %w", err)
+        }</span>
+        <span class="cov1" title="1">return Patch[vo.VolumeVO](ctx, c, "volumes", volumeID, map[string]any{"coverAssetId": volumeID})</span>
+}
+
+// SetVolumeSamples uploads each image as sample/&lt;volumeID&gt;-&lt;i&gt; (order
+// preserved) and replaces the volume's sample list in one PATCH. An empty
+// slice clears all samples.
+func SetVolumeSamples(ctx context.Context, c *Client, assets *AssetsClient, volumeID string, samples [][]byte, contentType string) (*vo.VolumeVO, WriteDisposition, error) <span class="cov10" title="3">{
+        if len(samples) &gt; maxVolumeSamples </span><span class="cov1" title="1">{
+                return nil, WriteDisposition{}, fmt.Errorf("a volume may have at most %d samples, got %d", maxVolumeSamples, len(samples))
+        }</span>
+        <span class="cov6" title="2">ids := make([]string, len(samples))
+        for i, image := range samples </span><span class="cov6" title="2">{
+                id := fmt.Sprintf("%s-%d", volumeID, i)
+                if err := assets.Upload(ctx, AssetKindSample, id, image, contentType); err != nil </span><span class="cov0" title="0">{
+                        return nil, WriteDisposition{}, fmt.Errorf("uploading sample %d: %w", i, err)
+                }</span>
+                <span class="cov6" title="2">ids[i] = id</span>
+        }
+        <span class="cov6" title="2">return Patch[vo.VolumeVO](ctx, c, "volumes", volumeID, map[string]any{"sampleAssetIds": ids})</span>
+}
+</pre>
+		
+		<pre class="file" id="file11" style="display: none">package cmd
+
+import (
+        "context"
+        "fmt"
+        "net/http"
+        "os"
+        "time"
+
+        "github.com/sweetrpg/catalog-cli/internal/auth"
+        "github.com/sweetrpg/catalog-cli/internal/client"
+        "github.com/sweetrpg/catalog-cli/internal/config"
+)
+
+// buildAssetsClient is a var so tests can point uploads at a fixture server.
+var buildAssetsClient = func() (*client.AssetsClient, error) <span class="cov0" title="0">{ return newAssetsClient() }</span>
+
+// newAssetsClient wires the same keychain-backed session the catalog client
+// uses into an assets-web client. Uploads always require a session; there is
+// no anonymous fallback.
+func newAssetsClient() (*client.AssetsClient, error) <span class="cov1" title="1">{
+        cfg, err := config.Load(config.Sources{
+                FlagAPIURL:       flagAPIURL,
+                FlagAssetsWebURL: flagAssetsWebURL,
+                Getenv:           os.Getenv,
+                HomeDir:          os.UserHomeDir,
+        })
+        if err != nil </span><span class="cov0" title="0">{
+                return nil, err
+        }</span>
+        <span class="cov1" title="1">authCfg, err := auth.DefaultConfig()
+        if err != nil </span><span class="cov0" title="0">{
+                return nil, fmt.Errorf("asset upload requires a session: %w", err)
+        }</span>
+        <span class="cov1" title="1">source := &amp;auth.SessionSource{Cfg: authCfg, HTTP: &amp;http.Client{Timeout: 30 * time.Second}, Store: auth.KeyringStore{}}
+        return client.NewAssetsClient(cfg.AssetsWebURL, tokenFunc(source, true))</span>
+}
+
+// assetFlag extends one entity's edit command with a file-upload flag. The
+// apply closure runs after name resolution with the resolved record ID.
+type assetFlag struct {
+        name    string
+        usage   string
+        require bool // counts toward "nothing to update" even when no field flags are set
+        apply   func(ctx context.Context, c *client.Client, id string, path string) (*client.WriteDisposition, error)
+}
+
+// assetFlags holds the per-entity upload flags. Only volumes carry assets
+// today; add entries here as other types grow them.
+var assetFlags = map[string]assetFlag{
+        "volume": {
+                name:    "cover",
+                usage:   "replace the volume cover with this image (png/jpg/webp)",
+                require: true,
+                apply: func(ctx context.Context, c *client.Client, id string, path string) (*client.WriteDisposition, error) <span class="cov5" title="3">{
+                        data, err := os.ReadFile(path)
+                        if err != nil </span><span class="cov0" title="0">{
+                                return nil, fmt.Errorf("--cover: %w", err)
+                        }</span>
+                        <span class="cov5" title="3">contentType, err := client.ContentTypeForFilename(path)
+                        if err != nil </span><span class="cov1" title="1">{
+                                return nil, fmt.Errorf("--cover: %w", err)
+                        }</span>
+                        <span class="cov4" title="2">assets, err := buildAssetsClient()
+                        if err != nil </span><span class="cov1" title="1">{
+                                return nil, err
+                        }</span>
+                        <span class="cov1" title="1">_, disp, err := client.SetVolumeCover(ctx, c, assets, id, data, contentType)
+                        if err != nil </span><span class="cov0" title="0">{
+                                return nil, err
+                        }</span>
+                        <span class="cov1" title="1">return &amp;disp, nil</span>
+                },
+        },
+}
+
+// lookupAssetFlag returns the entity's upload flag definition, if any.
+func lookupAssetFlag(entityType string) (assetFlag, bool) <span class="cov10" title="8">{
+        af, ok := assetFlags[entityType]
+        return af, ok &amp;&amp; af.apply != nil
+}</span>
+</pre>
+		
+		<pre class="file" id="file12" style="display: none">package cmd
+
+import (
+        "context"
+        "errors"
+        "net/http"
+        "os/exec"
+        "runtime"
+        "time"
+
+        "github.com/spf13/cobra"
+        "github.com/sweetrpg/catalog-cli/internal/auth"
+)
+
+// ExitCoder lets subcommands pick their process exit code. Auth failures are
+// 3 so scripts can react without parsing stderr.
+type ExitCoder interface {
+        error
+        ExitCode() int
+}
+
+// ExitError adapts any error to an exit code.
+type ExitError struct {
+        Code int
+        Err  error
+}
+
+func (e *ExitError) Error() string <span class="cov8" title="7">{ return e.Err.Error() }</span>
+func (e *ExitError) ExitCode() int <span class="cov10" title="10">{ return e.Code }</span>
+func (e *ExitError) Unwrap() error <span class="cov0" title="0">{ return e.Err }</span>
+
+// authExit tags errors the user fixes by logging in again.
+func authExit(err error) error <span class="cov1" title="1">{
+        if auth.IsAuthRequired(err) </span><span class="cov1" title="1">{
+                return &amp;ExitError{Code: 3, Err: err}
+        }</span>
+        <span class="cov0" title="0">return err</span>
+}
+
+// openInBrowser tries the platform opener; failing silently is fine because
+// the URL is always printed for manual opening.
+func openInBrowser(u string) <span class="cov0" title="0">{
+        var cmd *exec.Cmd
+        switch runtime.GOOS </span>{
+        case "darwin":<span class="cov0" title="0">
+                cmd = exec.Command("open", u)</span>
+        case "linux":<span class="cov0" title="0">
+                cmd = exec.Command("xdg-open", u)</span>
+        default:<span class="cov0" title="0">
+                return</span>
+        }
+        <span class="cov0" title="0">_ = cmd.Start()</span>
+}
+
+var authCmd = &amp;cobra.Command{
+        Use:   "auth",
+        Short: "Manage login state",
+}
+
+var authLoginCmd = &amp;cobra.Command{
+        Use:   "login",
+        Short: "Log in via your browser using a device code",
+        RunE: func(cmd *cobra.Command, args []string) error <span class="cov0" title="0">{
+                cfg, err := auth.DefaultConfig()
+                if err != nil </span><span class="cov0" title="0">{
+                        return err
+                }</span>
+                <span class="cov0" title="0">hc := &amp;http.Client{Timeout: 15 * time.Second}
+                claims, err := auth.Login(cmd.Context(), hc, cfg, auth.KeyringStore{}, auth.SleepContext, openInBrowser)
+                if err != nil </span><span class="cov0" title="0">{
+                        if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) </span><span class="cov0" title="0">{
+                                return err
+                        }</span>
+                        <span class="cov0" title="0">return authExit(err)</span>
+                }
+                <span class="cov0" title="0">who := claims.Email
+                if who == "" </span><span class="cov0" title="0">{
+                        who = claims.Subject
+                }</span>
+                <span class="cov0" title="0">cmd.Printf("Logged in as %s\n", who)
+                return nil</span>
+        },
+}
+
+var authLogoutCmd = &amp;cobra.Command{
+        Use:   "logout",
+        Short: "Revoke and remove stored credentials",
+        RunE: func(cmd *cobra.Command, args []string) error <span class="cov0" title="0">{
+                cfg, err := auth.DefaultConfig()
+                if err != nil </span><span class="cov0" title="0">{
+                        return err
+                }</span>
+                <span class="cov0" title="0">loggedOut, err := auth.Logout(cmd.Context(), &amp;http.Client{Timeout: 15 * time.Second}, cfg, auth.KeyringStore{})
+                if err != nil </span><span class="cov0" title="0">{
+                        return err
+                }</span>
+                <span class="cov0" title="0">if loggedOut </span><span class="cov0" title="0">{
+                        cmd.Println("Logged out.")
+                }</span> else<span class="cov0" title="0"> {
+                        cmd.Println("Not logged in.")
+                }</span>
+                <span class="cov0" title="0">return nil</span>
+        },
+}
+
+func init() <span class="cov1" title="1">{
+        authCmd.AddCommand(authLoginCmd)
+        authCmd.AddCommand(authLogoutCmd)
+        rootCmd.AddCommand(authCmd)
+}</span>
+</pre>
+		
+		<pre class="file" id="file13" style="display: none">package cmd
+
+import (
+        "context"
+        "errors"
+        "fmt"
+        "net/http"
+        "os"
+        "sort"
+        "time"
+
+        "github.com/spf13/cobra"
+        "github.com/spf13/pflag"
+        "github.com/sweetrpg/catalog-cli/internal/auth"
+        "github.com/sweetrpg/catalog-cli/internal/client"
+        "github.com/sweetrpg/catalog-cli/internal/config"
+)
+
+var (
+        flagAPIURL       string
+        flagAssetsWebURL string
+
+        // buildAPIClient and buildAnonClient are vars so tests can point commands
+        // at a fixture server. Reads (view) hit unauthenticated endpoints and use
+        // the anonymous builder; everything else requires a session.
+        buildAPIClient  = func() (*client.Client, error) <span class="cov1" title="1">{ return newAPIClient(true) }</span>
+        buildAnonClient = func() (*client.Client, error) <span class="cov3" title="3">{ return newAPIClient(false) }</span>
+)
+
+// Generated per-entity children are kept here so tests can drive them.
+var (
+        addChildren    = map[string]*cobra.Command{}
+        editChildren   = map[string]*cobra.Command{}
+        viewChildren   = map[string]*cobra.Command{}
+        deleteChildren = map[string]*cobra.Command{}
+)
+
+func sortedEntityNames() []string <span class="cov5" title="11">{
+        names := make([]string, 0, len(entityRegistry))
+        for name := range entityRegistry </span><span class="cov10" title="88">{
+                names = append(names, name)
+        }</span>
+        <span class="cov5" title="11">sort.Strings(names)
+        return names</span>
+}
+
+func lookupEntity(entityType string) (entityOps, error) <span class="cov3" title="4">{
+        ops, ok := entityRegistry[entityType]
+        if !ok </span><span class="cov2" title="2">{
+                return entityOps{}, fmt.Errorf("unknown catalog type %q; valid types: %s", entityType, joinList(sortedEntityNames()))
+        }</span>
+        <span class="cov2" title="2">return ops, nil</span>
+}
+
+func joinList(items []string) string <span class="cov5" title="8">{
+        out := ""
+        for i, s := range items </span><span class="cov8" title="38">{
+                if i &gt; 0 </span><span class="cov7" title="30">{
+                        out += ", "
+                }</span>
+                <span class="cov8" title="38">out += s</span>
+        }
+        <span class="cov5" title="8">return out</span>
+}
+
+// newAPIClient wires config and the keychain-backed session source into a
+// client. With requireAuth false, a missing stored session is tolerated and
+// requests go out unauthenticated (read endpoints are public).
+func newAPIClient(requireAuth bool) (*client.Client, error) <span class="cov3" title="4">{
+        cfg, err := config.Load(config.Sources{
+                FlagAPIURL:       flagAPIURL,
+                FlagAssetsWebURL: flagAssetsWebURL,
+                Getenv:           os.Getenv,
+                HomeDir:          os.UserHomeDir,
+        })
+        if err != nil </span><span class="cov0" title="0">{
+                return nil, err
+        }</span>
+        <span class="cov3" title="4">authCfg, err := auth.DefaultConfig()
+        if err != nil </span><span class="cov3" title="4">{
+                if !requireAuth </span><span class="cov3" title="3">{
+                        // Reads are public; a binary built without baked-in auth settings
+                        // (e.g. plain `go run`) still serves them, just with no token.
+                        c, cerr := client.New(cfg.APIURL, func(context.Context) (string, error) </span><span class="cov3" title="4">{ return "", nil }</span>)
+                        <span class="cov3" title="3">if cerr != nil </span><span class="cov0" title="0">{
+                                return nil, cerr
+                        }</span>
+                        <span class="cov3" title="3">withCurlCapture(&amp;c.HTTP)
+                        return c, nil</span>
+                }
+                <span class="cov1" title="1">return nil, err</span>
+        }
+        <span class="cov0" title="0">hc := &amp;http.Client{Timeout: 30 * time.Second}
+        source := &amp;auth.SessionSource{Cfg: authCfg, HTTP: hc, Store: auth.KeyringStore{}}
+        c, err := client.New(cfg.APIURL, tokenFunc(source, requireAuth))
+        if err != nil </span><span class="cov0" title="0">{
+                return nil, err
+        }</span>
+        // Only catalog-api calls are captured; the auth source's own HTTP stays
+        // real so a --curl run never prints refresh tokens.
+        <span class="cov0" title="0">withCurlCapture(&amp;c.HTTP)
+        return c, nil</span>
+}
+
+// tokenFunc adapts a session source to the client's TokenSource. Anonymous
+// mode downgrades ErrNotLoggedIn to "no Authorization header"; auth-required
+// mode turns token failures into the login exit code.
+func tokenFunc(source *auth.SessionSource, requireAuth bool) client.TokenSource <span class="cov3" title="3">{
+        return func(ctx context.Context) (string, error) </span><span class="cov2" title="2">{
+                token, err := source.Token(ctx)
+                if err != nil </span><span class="cov2" title="2">{
+                        switch </span>{
+                        case !requireAuth &amp;&amp; errors.Is(err, auth.ErrNotLoggedIn):<span class="cov1" title="1">
+                                return "", nil</span>
+                        case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):<span class="cov0" title="0"></span>
+                        default:<span class="cov1" title="1">
+                                err = authExit(err)</span>
+                        }
+                }
+                <span class="cov1" title="1">return token, err</span>
+        }
+}
+
+// changedValues gathers provided flags as string slices; works for both
+// single and repeatable flags registered by the entity table.
+func changedValues(cmd *cobra.Command) map[string][]string <span class="cov5" title="8">{
+        values := map[string][]string{}
+        cmd.Flags().Visit(func(f *pflag.Flag) </span><span class="cov4" title="7">{
+                if arr, err := cmd.Flags().GetStringArray(f.Name); err == nil </span><span class="cov0" title="0">{
+                        values[f.Name] = arr
+                        return
+                }</span>
+                <span class="cov4" title="7">s, _ := cmd.Flags().GetString(f.Name)
+                values[f.Name] = []string{s}</span>
+        })
+        <span class="cov5" title="8">return values</span>
+}
+
+func newAddCommand() *cobra.Command <span class="cov1" title="1">{
+        add := &amp;cobra.Command{
+                Use:   "add",
+                Short: "Create a new catalog record",
+        }
+        for _, name := range sortedEntityNames() </span><span class="cov5" title="8">{
+                ops := entityRegistry[name]
+                child := &amp;cobra.Command{
+                        Use:   fmt.Sprintf("%s &lt;name&gt; [flags]", name),
+                        Short: fmt.Sprintf("Create a new %s", name),
+                        Args:  cobra.ExactArgs(1),
+                        RunE: func(cmd *cobra.Command, args []string) error </span><span class="cov1" title="1">{
+                                c, err := buildAPIClient()
+                                if err != nil </span><span class="cov0" title="0">{
+                                        return err
+                                }</span>
+                                <span class="cov1" title="1">values := map[string][]string{ops.primaryFlag: {args[0]}}
+                                for k, v := range changedValues(cmd) </span><span class="cov1" title="1">{
+                                        if k == ops.primaryFlag &amp;&amp; len(v) == 1 </span><span class="cov0" title="0">{
+                                                continue</span> // positional already carries it
+                                        }
+                                        <span class="cov1" title="1">values[k] = v</span>
+                                }
+                                <span class="cov1" title="1">rec, err := ops.buildCreate(values)
+                                if err != nil </span><span class="cov0" title="0">{
+                                        return err
+                                }</span>
+                                <span class="cov1" title="1">id, err := ops.create(cmd.Context(), c, rec)
+                                if err != nil </span><span class="cov0" title="0">{
+                                        return writeErr(err)
+                                }</span>
+                                <span class="cov1" title="1">cmd.Printf("Created %s %s\n", name, *id)
+                                return nil</span>
+                        },
+                }
+                <span class="cov5" title="8">ops.register(child.Flags())
+                add.AddCommand(child)
+                addChildren[name] = child</span>
+        }
+        <span class="cov1" title="1">return add</span>
+}
+
+func newEditCommand() *cobra.Command <span class="cov1" title="1">{
+        edit := &amp;cobra.Command{
+                Use:   "edit",
+                Short: "Update an existing catalog record",
+        }
+        for _, name := range sortedEntityNames() </span><span class="cov5" title="8">{
+                ops := entityRegistry[name]
+                af, hasAsset := lookupAssetFlag(name)
+                child := &amp;cobra.Command{
+                        Use:   fmt.Sprintf("%s &lt;name-or-id&gt; [flags]", name),
+                        Short: fmt.Sprintf("Edit a %s", name),
+                        Args:  cobra.ExactArgs(1),
+                        RunE: func(cmd *cobra.Command, args []string) error </span><span class="cov4" title="7">{
+                                fields, err := ops.buildPatch(changedValues(cmd))
+                                if err != nil </span><span class="cov0" title="0">{
+                                        return err
+                                }</span>
+                                <span class="cov4" title="7">assetPath := ""
+                                if hasAsset </span><span class="cov3" title="4">{
+                                        assetPath, _ = cmd.Flags().GetString(af.name)
+                                }</span>
+                                <span class="cov4" title="7">if len(fields) == 0 &amp;&amp; assetPath == "" </span><span class="cov2" title="2">{
+                                        return usageErr("no properties to update; pass at least one property flag")
+                                }</span>
+                                <span class="cov4" title="5">c, err := buildAPIClient()
+                                if err != nil </span><span class="cov0" title="0">{
+                                        return err
+                                }</span>
+                                <span class="cov4" title="5">id, err := resolveRef(cmd.Context(), c, ops, args[0])
+                                if err != nil </span><span class="cov0" title="0">{
+                                        return err
+                                }</span>
+                                <span class="cov4" title="5">if assetPath != "" </span><span class="cov3" title="3">{
+                                        disp, err := af.apply(cmd.Context(), c, id, assetPath)
+                                        if err != nil </span><span class="cov2" title="2">{
+                                                return writeErr(err)
+                                        }</span>
+                                        <span class="cov1" title="1">cmd.Println(dispositionText(disp))</span>
+                                }
+                                <span class="cov3" title="3">if len(fields) == 0 </span><span class="cov1" title="1">{
+                                        return nil
+                                }</span>
+                                <span class="cov2" title="2">_, disp, err := ops.patch(cmd.Context(), c, id, fields)
+                                if err != nil </span><span class="cov1" title="1">{
+                                        return writeErr(err)
+                                }</span>
+                                <span class="cov1" title="1">cmd.Println(dispositionText(disp))
+                                return nil</span>
+                        },
+                }
+                <span class="cov5" title="8">ops.register(child.Flags())
+                if hasAsset </span><span class="cov1" title="1">{
+                        child.Flags().String(af.name, "", af.usage)
+                }</span>
+                <span class="cov5" title="8">edit.AddCommand(child)
+                editChildren[name] = child</span>
+        }
+        <span class="cov1" title="1">return edit</span>
+}
+
+func newViewCommand() *cobra.Command <span class="cov1" title="1">{
+        view := &amp;cobra.Command{
+                Use:   "view",
+                Short: "Show one catalog record",
+        }
+        for _, name := range sortedEntityNames() </span><span class="cov5" title="8">{
+                ops := entityRegistry[name]
+                child := &amp;cobra.Command{
+                        Use:   fmt.Sprintf("%s &lt;name-or-id&gt;", name),
+                        Short: fmt.Sprintf("View a %s", name),
+                        Args:  cobra.ExactArgs(1),
+                        RunE: func(cmd *cobra.Command, args []string) error </span><span class="cov5" title="8">{
+                                format, err := formatFromFlags(cmd)
+                                if err != nil </span><span class="cov1" title="1">{
+                                        return err
+                                }</span>
+                                <span class="cov4" title="7">c, err := buildAnonClient()
+                                if err != nil </span><span class="cov0" title="0">{
+                                        return err
+                                }</span>
+                                <span class="cov4" title="7">id, err := resolveRef(cmd.Context(), c, ops, args[0])
+                                if err != nil </span><span class="cov0" title="0">{
+                                        return err
+                                }</span>
+                                <span class="cov4" title="7">rec, err := ops.get(cmd.Context(), c, id)
+                                if err != nil </span><span class="cov2" title="2">{
+                                        return writeErr(err)
+                                }</span>
+                                <span class="cov4" title="5">return printRecord(cmd, rec, format)</span>
+                        },
+                }
+                <span class="cov5" title="8">child.Flags().Bool("json", false, "emit raw JSON")
+                child.Flags().Bool("yaml", false, "emit YAML")
+                view.AddCommand(child)
+                viewChildren[name] = child</span>
+        }
+        <span class="cov1" title="1">return view</span>
+}
+
+func newDeleteCommand() *cobra.Command <span class="cov3" title="4">{
+        del := &amp;cobra.Command{
+                Use:   "delete",
+                Short: "Delete a catalog record",
+        }
+        for _, name := range sortedEntityNames() </span><span class="cov7" title="32">{
+                ops := entityRegistry[name]
+                child := &amp;cobra.Command{
+                        Use:   fmt.Sprintf("%s &lt;name-or-id&gt;", name),
+                        Short: fmt.Sprintf("Delete a %s", name),
+                        Args:  cobra.ExactArgs(1),
+                        RunE: func(cmd *cobra.Command, args []string) error </span><span class="cov3" title="4">{
+                                c, err := buildAPIClient()
+                                if err != nil </span><span class="cov0" title="0">{
+                                        return err
+                                }</span>
+                                <span class="cov3" title="4">id, err := resolveRef(cmd.Context(), c, ops, args[0])
+                                if err != nil </span><span class="cov0" title="0">{
+                                        return err
+                                }</span>
+                                <span class="cov3" title="4">if err := confirmDelete(cmd, name, id); err != nil </span><span class="cov2" title="2">{
+                                        if errors.Is(err, ErrDeclined) </span><span class="cov1" title="1">{
+                                                cmd.Println("Delete cancelled; record unchanged.")
+                                                return nil
+                                        }</span>
+                                        <span class="cov1" title="1">return err</span>
+                                }
+                                <span class="cov2" title="2">if err := ops.del(cmd.Context(), c, id); err != nil </span><span class="cov1" title="1">{
+                                        return writeErr(err)
+                                }</span>
+                                <span class="cov1" title="1">cmd.Printf("Deleted %s %s\n", name, id)
+                                return nil</span>
+                        },
+                }
+                <span class="cov7" title="32">del.AddCommand(child)
+                deleteChildren[name] = child</span>
+        }
+        <span class="cov3" title="4">return del</span>
+}
+
+// dispositionText describes what the server did with a write.
+func dispositionText(disp *client.WriteDisposition) string <span class="cov6" title="14">{
+        if disp == nil </span><span class="cov1" title="1">{
+                return ""
+        }</span>
+        <span class="cov6" title="13">if disp.Submitted </span><span class="cov3" title="3">{
+                if disp.Message != "" </span><span class="cov2" title="2">{
+                        return fmt.Sprintf("Submitted proposed change: %s", disp.Message)
+                }</span>
+                <span class="cov1" title="1">return "Submitted proposed change for review"</span>
+        }
+        <span class="cov5" title="10">return fmt.Sprintf("Updated live record (version %d)", disp.Version)</span>
+}
+
+// writeErr maps client failures onto CLI exit conventions; auth errors exit 3.
+func writeErr(err error) error <span class="cov4" title="6">{
+        if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) </span><span class="cov0" title="0">{
+                return err
+        }</span>
+        <span class="cov4" title="6">if client.IsAuthError(err) || auth.IsAuthRequired(err) </span><span class="cov0" title="0">{
+                return authExit(err)
+        }</span>
+        <span class="cov4" title="6">return err</span>
+}
+</pre>
+		
+		<pre class="file" id="file14" style="display: none">package cmd
+
+import (
+        "bytes"
+        "encoding/json"
+        "errors"
+        "fmt"
+        "io"
+        "net/http"
+        "os"
+        "sort"
+        "strings"
+)
+
+// errCurlEmitted aborts a command after its request was rendered as cURL;
+// isCurlExit turns it into a clean exit 0.
+var errCurlEmitted = errors.New("cURL command printed")
+
+// curlOut receives rendered commands; a var so tests can capture output.
+var curlOut io.Writer = os.Stdout
+
+// flagCurl mirrors the global --curl flag.
+var flagCurl bool
+
+// curlTransport renders each outgoing request as an equivalent cURL command
+// and refuses to send it. Flows that need server data to continue (name
+// resolution feeding later requests) stop after their first request; pass
+// IDs instead of names to see write requests directly.
+type curlTransport struct{}
+
+func (curlTransport) RoundTrip(req *http.Request) (*http.Response, error) <span class="cov4" title="3">{
+        // The flow dies here, so silencing cobra's error/usage printing is safe:
+        // only the rendered command should reach the terminal. Errors that happen
+        // before any request (config, auth) still print normally.
+        rootCmd.SilenceErrors = true
+        rootCmd.SilenceUsage = true
+        _, _ = fmt.Fprintln(curlOut, renderCurl(req))
+        return nil, errCurlEmitted
+}</span>
+
+// withCurlCapture swaps in the capture transport when --curl is set.
+func withCurlCapture(c **http.Client) <span class="cov6" title="5">{
+        if flagCurl &amp;&amp; c != nil &amp;&amp; *c != nil </span><span class="cov4" title="3">{
+                *c = &amp;http.Client{Transport: curlTransport{}}
+        }</span>
+}
+
+// isCurlExit reports whether an error is the capture transport's abort,
+// surviving any wrapping on the way up.
+func isCurlExit(err error) bool <span class="cov9" title="10">{
+        if err == nil </span><span class="cov6" title="5">{
+                return false
+        }</span>
+        <span class="cov6" title="5">return errors.Is(err, errCurlEmitted) || strings.Contains(err.Error(), errCurlEmitted.Error())</span>
+}
+
+// renderCurl builds a runnable-except-for-the-token cURL invocation: headers
+// print as set, Authorization values are masked, JSON bodies are pretty-
+// printed, and everything is single-quote shell-escaped.
+func renderCurl(req *http.Request) string <span class="cov6" title="5">{
+        head := "curl"
+        if req.Method != http.MethodGet </span><span class="cov3" title="2">{
+                head += " -X " + req.Method
+        }</span>
+        <span class="cov6" title="5">parts := []string{head + " " + shellQuote(req.URL.String())}
+
+        keys := make([]string, 0, len(req.Header))
+        for k := range req.Header </span><span class="cov7" title="6">{
+                keys = append(keys, k)
+        }</span>
+        <span class="cov6" title="5">sort.Strings(keys)
+        for _, k := range keys </span><span class="cov7" title="6">{
+                v := req.Header.Get(k)
+                if strings.EqualFold(k, "Authorization") </span><span class="cov1" title="1">{
+                        v = maskAuth(v)
+                }</span>
+                <span class="cov7" title="6">parts = append(parts, "-H "+shellQuote(k+": "+v))</span>
+        }
+        <span class="cov6" title="5">if body := peekBody(req); len(body) &gt; 0 </span><span class="cov1" title="1">{
+                parts = append(parts, "--data "+shellQuote(string(body)))
+        }</span>
+        <span class="cov6" title="5">return strings.Join(parts, " \\\n  ")</span>
+}
+
+// peekBody reads the request body for rendering without consuming it for real:
+// GetBody replays it when available; otherwise the raw bytes are restored onto
+// the request. Parseable JSON is indented for readability.
+func peekBody(req *http.Request) []byte <span class="cov7" title="6">{
+        if req.Body == nil || req.Body == http.NoBody </span><span class="cov6" title="4">{
+                return nil
+        }</span>
+        <span class="cov3" title="2">var raw []byte
+        if req.GetBody != nil </span><span class="cov3" title="2">{
+                br, err := req.GetBody()
+                if err != nil </span><span class="cov0" title="0">{
+                        return nil
+                }</span>
+                <span class="cov3" title="2">defer func() </span><span class="cov3" title="2">{ _ = br.Close() }</span>()
+                <span class="cov3" title="2">raw, _ = io.ReadAll(br)</span>
+        } else<span class="cov0" title="0"> {
+                raw, _ = io.ReadAll(req.Body)
+                req.Body = io.NopCloser(bytes.NewReader(raw))
+        }</span>
+        <span class="cov3" title="2">if len(raw) == 0 </span><span class="cov0" title="0">{
+                return nil
+        }</span>
+        <span class="cov3" title="2">var buf bytes.Buffer
+        if json.Indent(&amp;buf, raw, "", "  ") == nil &amp;&amp; json.Valid(buf.Bytes()) </span><span class="cov3" title="2">{
+                return buf.Bytes()
+        }</span>
+        <span class="cov0" title="0">return raw</span>
+}
+
+// maskAuth keeps tokens out of terminals and scrollback: only the scheme
+// survives ("Bearer &lt;redacted&gt;").
+func maskAuth(v string) string <span class="cov1" title="1">{
+        parts := strings.SplitN(v, " ", 2)
+        if len(parts) == 2 </span><span class="cov1" title="1">{
+                return parts[0] + " &lt;redacted&gt;"
+        }</span>
+        <span class="cov0" title="0">return "&lt;redacted&gt;"</span>
+}
+
+// shellQuote wraps s in single quotes, escaping embedded quotes so the
+// printed command round-trips through POSIX shells.
+func shellQuote(s string) string <span class="cov10" title="12">{
+        return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}</span>
+</pre>
+		
+		<pre class="file" id="file15" style="display: none">package cmd
+
+import (
+        "context"
+        "fmt"
+        "reflect"
+        "strings"
+
+        "github.com/spf13/pflag"
+        "github.com/sweetrpg/catalog-cli/internal/client"
+)
+
+// Relation names one modeled connection to another entity type. WireName is
+// the JSON:API relation tag on the owning VO; Many marks array relations.
+type Relation struct {
+        Type     string // counterpart entity type name
+        WireName string // relation key on the wire, e.g. "publisher"
+        Many     bool
+}
+
+// FlagDef binds one CLI property flag to a VO field. Set writes the field
+// directly and returns the wire value for PATCH bodies, so renaming or
+// removing that field in catalog-objects breaks the build here - the schema-
+// drift check the design calls for.
+type FlagDef[T any] struct {
+        Name     string // flag spelling, e.g. "short-title"
+        Attr     string // payload key sent to catalog-api (json tag)
+        Usage    string
+        Repeated bool // flag may appear multiple times; value is a slice
+        Set      func(v *T, vals []string) (any, error)
+}
+
+// EntityDef describes one catalog entity type for the generic commands.
+type EntityDef[T any] struct {
+        Type        client.EntityType
+        PrimaryFlag string           // positional-name flag, e.g. "title"
+        PrimaryAttr string           // its payload key
+        PrimarySet  func(*T, string) // writes the positional name onto the VO
+        Flags       []FlagDef[T]
+        Relations   []Relation
+        Label       func(*T) string // display label for pickers and output
+        Detail      func(*T) string // distinguishing info shown beside labels
+}
+
+// candidate is a type-erased resolution hit.
+type candidate struct {
+        ID     string
+        Label  string
+        Detail string
+}
+
+// entityOps is the type-erased surface generic commands drive. Everything
+// closes over concrete vo types from adapt(), keeping call sites untyped.
+type entityOps struct {
+        spec        client.EntityType
+        primaryFlag string
+        register    func(*pflag.FlagSet)
+        buildCreate func(values map[string][]string) (any, error)
+        create      func(context.Context, *client.Client, any) (*string, error)
+        buildPatch  func(values map[string][]string) (map[string]any, error)
+        patch       func(context.Context, *client.Client, string, map[string]any) (any, *client.WriteDisposition, error)
+        get         func(context.Context, *client.Client, string) (any, error)
+        del         func(context.Context, *client.Client, string) error
+        find        func(context.Context, *client.Client, string) ([]candidate, error)
+        labelOf     func(any) string
+        detailOf    func(any) string
+}
+
+var entityRegistry = map[string]entityOps{}
+
+func register[T any](def EntityDef[T]) <span class="cov5" title="8">{
+        if _, dup := entityRegistry[def.Type.Name]; dup </span><span class="cov0" title="0">{
+                panic(fmt.Sprintf("entity %q registered twice", def.Type.Name))</span>
+        }
+        <span class="cov5" title="8">entityRegistry[def.Type.Name] = adapt(def)</span>
+}
+
+func adapt[T any](def EntityDef[T]) entityOps <span class="cov5" title="8">{
+        // Contribution's primary ("roles") is also a repeated flag; when that
+        // happens the FlagDef owns create+patch handling and the primary block
+        // stays out of the way.
+        primaryIsFlag := false
+        for _, f := range def.Flags </span><span class="cov8" title="36">{
+                if f.Name == def.PrimaryFlag </span><span class="cov1" title="1">{
+                        primaryIsFlag = true
+                }</span>
+        }
+        <span class="cov5" title="8">return entityOps{
+                spec:        def.Type,
+                primaryFlag: def.PrimaryFlag,
+                register: func(fs *pflag.FlagSet) </span><span class="cov6" title="16">{
+                        for _, f := range def.Flags </span><span class="cov10" title="72">{
+                                if f.Repeated </span><span class="cov7" title="26">{
+                                        fs.StringArray(f.Name, nil, f.Usage)
+                                }</span> else<span class="cov9" title="46"> {
+                                        fs.String(f.Name, "", f.Usage)
+                                }</span>
+                        }
+                },
+                buildCreate: func(values map[string][]string) (any, error) <span class="cov3" title="3">{
+                        v := new(T)
+                        if !primaryIsFlag </span><span class="cov3" title="3">{
+                                if vals := values[def.PrimaryFlag]; len(vals) &gt; 0 </span><span class="cov1" title="1">{
+                                        s, err := single(def.PrimaryFlag, vals)
+                                        if err != nil </span><span class="cov0" title="0">{
+                                                return nil, fmt.Errorf("--%s: %w", def.PrimaryFlag, err)
+                                        }</span>
+                                        <span class="cov1" title="1">def.PrimarySet(v, s)</span>
+                                }
+                        }
+                        <span class="cov3" title="3">if _, err := applyFlags(def.Flags, v, values); err != nil </span><span class="cov0" title="0">{
+                                return nil, err
+                        }</span>
+                        <span class="cov3" title="3">return v, nil</span>
+                },
+                create: func(ctx context.Context, c *client.Client, rec any) (*string, error) <span class="cov1" title="1">{
+                        typed, ok := rec.(*T)
+                        if !ok </span><span class="cov0" title="0">{
+                                return nil, fmt.Errorf("internal: unexpected create payload %T", rec)
+                        }</span>
+                        <span class="cov1" title="1">created, err := client.Create(ctx, c, def.Type.Plural, typed)
+                        if err != nil </span><span class="cov0" title="0">{
+                                return nil, err
+                        }</span>
+                        <span class="cov1" title="1">id := voID(created)
+                        return &amp;id, nil</span>
+                },
+                buildPatch: func(values map[string][]string) (map[string]any, error) <span class="cov6" title="13">{
+                        fields := map[string]any{}
+                        for _, f := range def.Flags </span><span class="cov9" title="62">{
+                                vals, ok := values[f.Name]
+                                if !ok || len(vals) == 0 </span><span class="cov9" title="54">{
+                                        continue</span>
+                                }
+                                <span class="cov5" title="8">wire, err := f.Set(new(T), vals)
+                                if err != nil </span><span class="cov1" title="1">{
+                                        return nil, fmt.Errorf("--%s: %w", f.Name, err)
+                                }</span>
+                                <span class="cov5" title="7">fields[f.Attr] = wire</span>
+                        }
+                        <span class="cov6" title="12">if !primaryIsFlag </span><span class="cov6" title="11">{
+                                if vals := values[def.PrimaryFlag]; len(vals) &gt; 0 </span><span class="cov1" title="1">{
+                                        s, err := single(def.PrimaryFlag, vals)
+                                        if err != nil </span><span class="cov0" title="0">{
+                                                return nil, fmt.Errorf("--%s: %w", def.PrimaryFlag, err)
+                                        }</span>
+                                        <span class="cov1" title="1">fields[def.PrimaryAttr] = s</span>
+                                }
+                        }
+                        <span class="cov6" title="12">return fields, nil</span>
+                },
+                patch: func(ctx context.Context, c *client.Client, id string, fields map[string]any) (any, *client.WriteDisposition, error) <span class="cov5" title="10">{
+                        updated, disp, err := client.Patch[T](ctx, c, def.Type.Plural, id, fields)
+                        if err != nil </span><span class="cov1" title="1">{
+                                return nil, nil, err
+                        }</span>
+                        <span class="cov5" title="9">return updated, &amp;disp, nil</span>
+                },
+                get: func(ctx context.Context, c *client.Client, id string) (any, error) <span class="cov5" title="7">{
+                        return client.Get[T](ctx, c, def.Type.Plural, id)
+                }</span>,
+                del: func(ctx context.Context, c *client.Client, id string) error <span class="cov2" title="2">{
+                        return client.Delete(ctx, c, def.Type.Plural, id)
+                }</span>,
+                find: func(ctx context.Context, c *client.Client, q string) ([]candidate, error) <span class="cov3" title="3">{
+                        records, err := fetchForFind[T](ctx, c, def.Type, q)
+                        if err != nil </span><span class="cov0" title="0">{
+                                return nil, err
+                        }</span>
+                        <span class="cov3" title="3">if !def.Type.Searchable </span><span class="cov2" title="2">{
+                                records = pickMatches(records, def.PrimaryAttr, def.Label, q)
+                        }</span>
+                        <span class="cov3" title="3">out := make([]candidate, 0, len(records))
+                        for _, r := range records </span><span class="cov3" title="3">{
+                                out = append(out, candidate{ID: voID(r), Label: def.Label(r), Detail: def.Detail(r)})
+                        }</span>
+                        <span class="cov3" title="3">return out, nil</span>
+                },
+                labelOf: func(a any) string <span class="cov2" title="2">{
+                        rec, ok := a.(*T)
+                        if !ok </span><span class="cov0" title="0">{
+                                return fmt.Sprintf("%T", a)
+                        }</span>
+                        <span class="cov2" title="2">return def.Label(rec)</span>
+                },
+                detailOf: func(a any) string <span class="cov1" title="1">{
+                        rec, _ := a.(*T)
+                        return def.Detail(rec)
+                }</span>,
+        }
+}
+
+// applyFlags runs each provided flag's setter onto v, failing on bad input
+// before anything reaches the API.
+func applyFlags[T any](defs []FlagDef[T], v *T, values map[string][]string) (map[string]any, error) <span class="cov3" title="3">{
+        wire := map[string]any{}
+        for _, f := range defs </span><span class="cov6" title="15">{
+                vals, ok := values[f.Name]
+                if !ok || len(vals) == 0 </span><span class="cov5" title="10">{
+                        continue</span>
+                }
+                <span class="cov4" title="5">w, err := f.Set(v, vals)
+                if err != nil </span><span class="cov0" title="0">{
+                        return nil, fmt.Errorf("--%s: %w", f.Name, err)
+                }</span>
+                <span class="cov4" title="5">wire[f.Attr] = w</span>
+        }
+        <span class="cov3" title="3">return wire, nil</span>
+}
+
+// voID reads the record's ID regardless of concrete VO type; every VO leads
+// with an ID field by JSON:API convention.
+func voID(v any) string <span class="cov5" title="9">{
+        rv := reflect.ValueOf(v)
+        for rv.Kind() == reflect.Pointer </span><span class="cov5" title="8">{
+                rv = rv.Elem()
+        }</span>
+        <span class="cov5" title="9">if rv.Kind() != reflect.Struct </span><span class="cov1" title="1">{
+                return ""
+        }</span>
+        <span class="cov5" title="8">return rv.FieldByName("ID").String()</span>
+}
+
+// fetchForFind gathers the records a query matches against. Searchable types
+// delegate to catalog-api's /search endpoint; the rest page through the whole
+// collection because server-side filters are exact $eq matches - far too
+// strict for name lookup.
+func fetchForFind[T any](ctx context.Context, c *client.Client, spec client.EntityType, q string) ([]*T, error) <span class="cov3" title="4">{
+        if spec.Searchable </span><span class="cov1" title="1">{
+                return client.Search[T](ctx, c, spec.Plural, q)
+        }</span>
+        <span class="cov3" title="3">const pageSize = 500
+        const maxRecords = 10000
+        all := make([]*T, 0)
+        for start := 0; len(all) &lt; maxRecords; start += pageSize </span><span class="cov3" title="4">{
+                page, err := client.List[T](ctx, c, spec.Plural, client.ListOptions{Start: start, Limit: pageSize})
+                if err != nil </span><span class="cov0" title="0">{
+                        return nil, err
+                }</span>
+                <span class="cov3" title="4">all = append(all, page...)
+                if len(page) &lt; pageSize </span><span class="cov3" title="3">{
+                        return all, nil
+                }</span>
+        }
+        <span class="cov0" title="0">return all, nil</span>
+}
+
+// pickMatches filters records to those whose primary attribute (or label,
+// when the attribute is not a plain string) case-insensitively equals the
+// query; when nothing matches exactly, substring hits are returned instead.
+func pickMatches[T any](records []*T, attr string, label func(*T) string, query string) []*T <span class="cov4" title="5">{
+        q := strings.ToLower(strings.TrimSpace(query))
+        if q == "" </span><span class="cov0" title="0">{
+                return nil
+        }</span>
+        <span class="cov4" title="5">var exact, partial []*T
+        for _, r := range records </span><span class="cov6" title="15">{
+                hay := voString(r, attr)
+                if hay == "" </span><span class="cov0" title="0">{
+                        hay = label(r)
+                }</span>
+                <span class="cov6" title="15">lower := strings.ToLower(hay)
+                switch </span>{
+                case lower == q:<span class="cov2" title="2">
+                        exact = append(exact, r)</span>
+                case strings.Contains(lower, q):<span class="cov3" title="4">
+                        partial = append(partial, r)</span>
+                }
+        }
+        <span class="cov4" title="5">if len(exact) &gt; 0 </span><span class="cov1" title="1">{
+                return exact
+        }</span>
+        <span class="cov3" title="4">return partial</span>
+}
+
+// voString reads the struct field whose json tag names attr, when it holds a
+// string; non-string attributes yield "" so callers can fall back to labels.
+func voString(v any, attr string) string <span class="cov6" title="15">{
+        rv := reflect.ValueOf(v)
+        for rv.Kind() == reflect.Pointer </span><span class="cov6" title="15">{
+                rv = rv.Elem()
+        }</span>
+        <span class="cov6" title="15">if rv.Kind() != reflect.Struct </span><span class="cov0" title="0">{
+                return ""
+        }</span>
+        <span class="cov6" title="15">rt := rv.Type()
+        for i := 0; i &lt; rt.NumField(); i++ </span><span class="cov8" title="30">{
+                tag := strings.Split(rt.Field(i).Tag.Get("json"), ",")[0]
+                if tag != attr </span><span class="cov6" title="15">{
+                        continue</span>
+                }
+                <span class="cov6" title="15">if fv := rv.Field(i); fv.Kind() == reflect.String </span><span class="cov6" title="15">{
+                        return fv.String()
+                }</span>
+                <span class="cov0" title="0">return ""</span>
+        }
+        <span class="cov0" title="0">return ""</span>
+}
+
+// single returns the lone value for a single-shot flag.
+func single(flag string, vals []string) (string, error) <span class="cov6" title="12">{
+        if len(vals) != 1 </span><span class="cov1" title="1">{
+                return "", fmt.Errorf("expected one value, got %d", len(vals))
+        }</span>
+        <span class="cov6" title="11">return vals[0], nil</span>
+}
+
+// splitKV parses "name=value" (or bare "name") pairs used by --tag/--property.
+func splitKV(spec string) (string, string) <span class="cov3" title="3">{
+        if k, v, found := strings.Cut(spec, "="); found </span><span class="cov2" title="2">{
+                return k, v
+        }</span>
+        <span class="cov1" title="1">return spec, ""</span>
+}
+
+func init() <span class="cov1" title="1">{
+        register(volumeDef())
+        register(publisherDef())
+        register(studioDef())
+        register(personDef())
+        register(systemDef())
+        register(licenseDef())
+        register(reviewDef())
+        register(contributionDef())
+}</span>
+</pre>
+		
+		<pre class="file" id="file16" style="display: none">package cmd
+
+import (
+        "strings"
+
+        "github.com/sweetrpg/catalog-cli/internal/client"
+        "github.com/sweetrpg/catalog-objects.go/vo"
+        modelcore "github.com/sweetrpg/model-core.go/vo"
+)
+
+// Every def below references concrete vo fields in Set/Label/Detail, so
+// catalog-objects schema changes fail this package's build.
+
+func parseTags(vals []string) []modelcore.TagVO <span class="cov1" title="1">{
+        out := make([]modelcore.TagVO, 0, len(vals))
+        for _, spec := range vals </span><span class="cov2" title="2">{
+                name, value := splitKV(spec)
+                out = append(out, modelcore.TagVO{Name: name, Value: value})
+        }</span>
+        <span class="cov1" title="1">return out</span>
+}
+
+func parseProps(vals []string) []modelcore.PropertyVO <span class="cov1" title="1">{
+        out := make([]modelcore.PropertyVO, 0, len(vals))
+        for _, spec := range vals </span><span class="cov1" title="1">{
+                name, value := splitKV(spec)
+                out = append(out, modelcore.PropertyVO{Name: name, Kind: "string", Value: value})
+        }</span>
+        <span class="cov1" title="1">return out</span>
+}
+
+func textSetter[T any](field func(*T) *string) func(*T, []string) (any, error) <span class="cov10" title="30">{
+        return func(v *T, vals []string) (any, error) </span><span class="cov7" title="10">{
+                s, err := single("", vals)
+                if err != nil </span><span class="cov1" title="1">{
+                        return nil, err
+                }</span>
+                <span class="cov6" title="9">p := field(v)
+                *p = s
+                return s, nil</span>
+        }
+}
+
+func volumeDef() EntityDef[vo.VolumeVO] <span class="cov2" title="2">{
+        return EntityDef[vo.VolumeVO]{
+                Type:        client.Entities["volume"],
+                PrimaryFlag: "title",
+                PrimaryAttr: "title",
+                PrimarySet:  func(v *vo.VolumeVO, s string) </span><span class="cov0" title="0">{ v.Title = s }</span>,
+                Label:       func(v *vo.VolumeVO) string <span class="cov3" title="3">{ return v.Title }</span>,
+                Detail:      func(v *vo.VolumeVO) string <span class="cov2" title="2">{ return v.Format }</span>,
+                Relations: []Relation{
+                        {Type: "system", WireName: "system", Many: true},
+                        {Type: "publisher", WireName: "publisher", Many: true},
+                        {Type: "studio", WireName: "studio", Many: true},
+                        {Type: "license", WireName: "license", Many: true},
+                },
+                Flags: []FlagDef[vo.VolumeVO]{
+                        {Name: "description", Attr: "description", Usage: "long description", Set: textSetter(func(v *vo.VolumeVO) *string <span class="cov1" title="1">{ return &amp;v.Description }</span>)},
+                        {Name: "notes", Attr: "notes", Usage: "internal notes", Set: textSetter(func(v *vo.VolumeVO) *string <span class="cov1" title="1">{ return &amp;v.Notes }</span>)},
+                        {Name: "format", Attr: "format", Usage: "physical/digital format (e.g. core)", Set: textSetter(func(v *vo.VolumeVO) *string <span class="cov2" title="2">{ return &amp;v.Format }</span>)},
+                        {Name: "tag", Attr: "tags", Repeated: true, Usage: "tag as name or name=value (repeatable)", Set: func(v *vo.VolumeVO, vals []string) (any, error) <span class="cov1" title="1">{
+                                v.Tags = parseTags(vals)
+                                return v.Tags, nil
+                        }</span>},
+                        {Name: "property", Attr: "properties", Repeated: true, Usage: "property as name=value (repeatable)", Set: func(v *vo.VolumeVO, vals []string) (any, error) <span class="cov0" title="0">{
+                                v.Properties = parseProps(vals)
+                                return v.Properties, nil
+                        }</span>},
+                },
+        }
+}
+
+func publisherDef() EntityDef[vo.PublisherVO] <span class="cov1" title="1">{
+        return EntityDef[vo.PublisherVO]{
+                Type:        client.Entities["publisher"],
+                PrimaryFlag: "name",
+                PrimaryAttr: "name",
+                PrimarySet:  func(v *vo.PublisherVO, s string) </span><span class="cov1" title="1">{ v.Name = s }</span>,
+                Label:       func(p *vo.PublisherVO) string <span class="cov1" title="1">{ return p.Name }</span>,
+                Detail:      func(p *vo.PublisherVO) string <span class="cov1" title="1">{ return p.Website }</span>,
+                Flags: []FlagDef[vo.PublisherVO]{
+                        {Name: "address", Attr: "address", Usage: "postal address", Set: textSetter(func(v *vo.PublisherVO) *string <span class="cov0" title="0">{ return &amp;v.Address }</span>)},
+                        {Name: "website", Attr: "website", Usage: "website URL", Set: textSetter(func(v *vo.PublisherVO) *string <span class="cov3" title="3">{ return &amp;v.Website }</span>)},
+                        {Name: "notes", Attr: "notes", Usage: "internal notes", Set: textSetter(func(v *vo.PublisherVO) *string <span class="cov0" title="0">{ return &amp;v.Notes }</span>)},
+                        {Name: "tag", Attr: "tags", Repeated: true, Usage: "tag as name or name=value (repeatable)", Set: func(v *vo.PublisherVO, vals []string) (any, error) <span class="cov0" title="0">{
+                                v.Tags = parseTags(vals)
+                                return v.Tags, nil
+                        }</span>},
+                        {Name: "property", Attr: "properties", Repeated: true, Usage: "property as name=value (repeatable)", Set: func(v *vo.PublisherVO, vals []string) (any, error) <span class="cov1" title="1">{
+                                v.Properties = parseProps(vals)
+                                return v.Properties, nil
+                        }</span>},
+                },
+        }
+}
+
+func studioDef() EntityDef[vo.StudioVO] <span class="cov1" title="1">{
+        return EntityDef[vo.StudioVO]{
+                Type:        client.Entities["studio"],
+                PrimaryFlag: "name",
+                PrimaryAttr: "name",
+                PrimarySet:  func(v *vo.StudioVO, s string) </span><span class="cov0" title="0">{ v.Name = s }</span>,
+                Label:       func(s *vo.StudioVO) string <span class="cov0" title="0">{ return s.Name }</span>,
+                Detail:      func(s *vo.StudioVO) string <span class="cov0" title="0">{ return s.Website }</span>,
+                Flags: []FlagDef[vo.StudioVO]{
+                        {Name: "website", Attr: "website", Usage: "website URL", Set: textSetter(func(v *vo.StudioVO) *string <span class="cov0" title="0">{ return &amp;v.Website }</span>)},
+                        {Name: "notes", Attr: "notes", Usage: "internal notes", Set: textSetter(func(v *vo.StudioVO) *string <span class="cov0" title="0">{ return &amp;v.Notes }</span>)},
+                        {Name: "tag", Attr: "tags", Repeated: true, Usage: "tag as name or name=value (repeatable)", Set: func(v *vo.StudioVO, vals []string) (any, error) <span class="cov0" title="0">{
+                                v.Tags = parseTags(vals)
+                                return v.Tags, nil
+                        }</span>},
+                        {Name: "property", Attr: "properties", Repeated: true, Usage: "property as name=value (repeatable)", Set: func(v *vo.StudioVO, vals []string) (any, error) <span class="cov0" title="0">{
+                                v.Properties = parseProps(vals)
+                                return v.Properties, nil
+                        }</span>},
+                },
+        }
+}
+
+func personDef() EntityDef[vo.PersonVO] <span class="cov1" title="1">{
+        return EntityDef[vo.PersonVO]{
+                Type:        client.Entities["person"],
+                PrimaryFlag: "name",
+                PrimaryAttr: "name",
+                PrimarySet:  func(v *vo.PersonVO, s string) </span><span class="cov0" title="0">{ v.Name = s }</span>,
+                Label:       func(p *vo.PersonVO) string <span class="cov0" title="0">{ return p.Name }</span>,
+                Detail:      func(p *vo.PersonVO) string <span class="cov0" title="0">{ return p.Notes }</span>,
+                Flags: []FlagDef[vo.PersonVO]{
+                        {Name: "notes", Attr: "notes", Usage: "internal notes", Set: textSetter(func(v *vo.PersonVO) *string <span class="cov0" title="0">{ return &amp;v.Notes }</span>)},
+                        {Name: "tag", Attr: "tags", Repeated: true, Usage: "tag as name or name=value (repeatable)", Set: func(v *vo.PersonVO, vals []string) (any, error) <span class="cov0" title="0">{
+                                v.Tags = parseTags(vals)
+                                return v.Tags, nil
+                        }</span>},
+                        {Name: "property", Attr: "properties", Repeated: true, Usage: "property as name=value (repeatable)", Set: func(v *vo.PersonVO, vals []string) (any, error) <span class="cov0" title="0">{
+                                v.Properties = parseProps(vals)
+                                return v.Properties, nil
+                        }</span>},
+                },
+        }
+}
+
+func systemDef() EntityDef[vo.SystemVO] <span class="cov1" title="1">{
+        return EntityDef[vo.SystemVO]{
+                Type: client.Entities["system"],
+                // GameSystem carries jsonapi attr "name" on the wire; json tag stays game_system.
+                PrimaryFlag: "game-system",
+                PrimaryAttr: "game_system",
+                PrimarySet:  func(v *vo.SystemVO, s string) </span><span class="cov0" title="0">{ v.GameSystem = s }</span>,
+                Label:       func(s *vo.SystemVO) string <span class="cov0" title="0">{ return s.GameSystem }</span>,
+                Detail:      func(s *vo.SystemVO) string <span class="cov1" title="1">{ return s.Edition }</span>,
+                Flags: []FlagDef[vo.SystemVO]{
+                        {Name: "edition", Attr: "edition", Usage: "edition label (e.g. 5e)", Set: textSetter(func(v *vo.SystemVO) *string <span class="cov1" title="1">{ return &amp;v.Edition }</span>)},
+                        {Name: "notes", Attr: "notes", Usage: "internal notes", Set: textSetter(func(v *vo.SystemVO) *string <span class="cov0" title="0">{ return &amp;v.Notes }</span>)},
+                        {Name: "tag", Attr: "tags", Repeated: true, Usage: "tag as name or name=value (repeatable)", Set: func(v *vo.SystemVO, vals []string) (any, error) <span class="cov0" title="0">{
+                                v.Tags = parseTags(vals)
+                                return v.Tags, nil
+                        }</span>},
+                },
+        }
+}
+
+func licenseDef() EntityDef[vo.LicenseVO] <span class="cov1" title="1">{
+        return EntityDef[vo.LicenseVO]{
+                Type:        client.Entities["license"],
+                PrimaryFlag: "title",
+                PrimaryAttr: "title",
+                PrimarySet:  func(v *vo.LicenseVO, s string) </span><span class="cov0" title="0">{ v.Title = s }</span>,
+                Label:       func(l *vo.LicenseVO) string <span class="cov0" title="0">{ return l.Title }</span>,
+                Detail:      func(l *vo.LicenseVO) string <span class="cov0" title="0">{ return l.Version }</span>,
+                Flags: []FlagDef[vo.LicenseVO]{
+                        {Name: "short-title", Attr: "short_title", Usage: "abbreviated title", Set: textSetter(func(v *vo.LicenseVO) *string <span class="cov1" title="1">{ return &amp;v.ShortTitle }</span>)},
+                        {Name: "version", Attr: "version", Usage: "license version", Set: textSetter(func(v *vo.LicenseVO) *string <span class="cov0" title="0">{ return &amp;v.Version }</span>)},
+                        {Name: "deed", Attr: "deed", Usage: "deed URL", Set: textSetter(func(v *vo.LicenseVO) *string <span class="cov0" title="0">{ return &amp;v.Deed }</span>)},
+                        {Name: "legal-code", Attr: "legal_code", Usage: "legal code URL", Set: textSetter(func(v *vo.LicenseVO) *string <span class="cov0" title="0">{ return &amp;v.LegalCode }</span>)},
+                        {Name: "website", Attr: "website", Usage: "website URL", Set: textSetter(func(v *vo.LicenseVO) *string <span class="cov0" title="0">{ return &amp;v.Website }</span>)},
+                        {Name: "status", Attr: "status", Usage: "status (e.g. active, retired)", Set: textSetter(func(v *vo.LicenseVO) *string <span class="cov0" title="0">{ return &amp;v.Status }</span>)},
+                        {Name: "availability", Attr: "availability", Usage: "availability note", Set: textSetter(func(v *vo.LicenseVO) *string <span class="cov0" title="0">{ return &amp;v.Availability }</span>)},
+                        {Name: "notes", Attr: "notes", Usage: "internal notes", Set: textSetter(func(v *vo.LicenseVO) *string <span class="cov0" title="0">{ return &amp;v.Notes }</span>)},
+                        {Name: "tag", Attr: "tags", Repeated: true, Usage: "tag as name or name=value (repeatable)", Set: func(v *vo.LicenseVO, vals []string) (any, error) <span class="cov0" title="0">{
+                                v.Tags = parseTags(vals)
+                                return v.Tags, nil
+                        }</span>},
+                        {Name: "property", Attr: "properties", Repeated: true, Usage: "property as name=value (repeatable)", Set: func(v *vo.LicenseVO, vals []string) (any, error) <span class="cov0" title="0">{
+                                v.Properties = parseProps(vals)
+                                return v.Properties, nil
+                        }</span>},
+                },
+        }
+}
+
+func reviewDef() EntityDef[vo.ReviewVO] <span class="cov2" title="2">{
+        return EntityDef[vo.ReviewVO]{
+                Type:        client.Entities["review"],
+                PrimaryFlag: "title",
+                PrimaryAttr: "title",
+                PrimarySet:  func(v *vo.ReviewVO, s string) </span><span class="cov0" title="0">{ v.Title = s }</span>,
+                Label:       func(r *vo.ReviewVO) string <span class="cov0" title="0">{ return r.Title }</span>,
+                Detail:      func(r *vo.ReviewVO) string <span class="cov0" title="0">{ return r.Language }</span>,
+                Relations:   []Relation{{Type: "volume", WireName: "volume"}},
+                Flags: []FlagDef[vo.ReviewVO]{
+                        {Name: "body", Attr: "body", Usage: "review body text", Set: textSetter(func(v *vo.ReviewVO) *string <span class="cov0" title="0">{ return &amp;v.Body }</span>)},
+                        {Name: "language", Attr: "language", Usage: "review language (e.g. en-US)", Set: textSetter(func(v *vo.ReviewVO) *string <span class="cov0" title="0">{ return &amp;v.Language }</span>)},
+                        {Name: "notes", Attr: "notes", Usage: "internal notes", Set: textSetter(func(v *vo.ReviewVO) *string <span class="cov0" title="0">{ return &amp;v.Notes }</span>)},
+                        {Name: "tag", Attr: "tags", Repeated: true, Usage: "tag as name or name=value (repeatable)", Set: func(v *vo.ReviewVO, vals []string) (any, error) <span class="cov0" title="0">{
+                                v.Tags = parseTags(vals)
+                                return v.Tags, nil
+                        }</span>},
+                },
+        }
+}
+
+func contributionDef() EntityDef[vo.ContributionVO] <span class="cov2" title="2">{
+        return EntityDef[vo.ContributionVO]{
+                Type:        client.Entities["contribution"],
+                PrimaryFlag: "roles",
+                PrimaryAttr: "Roles",
+                Label: func(c *vo.ContributionVO) string </span><span class="cov1" title="1">{
+                        var parts []string
+                        if c.Person != nil </span><span class="cov1" title="1">{
+                                parts = append(parts, c.Person.Name)
+                        }</span>
+                        <span class="cov1" title="1">if len(c.Roles) &gt; 0 </span><span class="cov1" title="1">{
+                                parts = append(parts, strings.Join(c.Roles, "/"))
+                        }</span>
+                        <span class="cov1" title="1">if c.Volume != nil </span><span class="cov1" title="1">{
+                                parts = append(parts, c.Volume.Title)
+                        }</span>
+                        <span class="cov1" title="1">return strings.Join(parts, " - ")</span>
+                },
+                Detail:    func(c *vo.ContributionVO) string <span class="cov0" title="0">{ return c.Notes }</span>,
+                Relations: []Relation{{Type: "person", WireName: "person"}, {Type: "volume", WireName: "volume"}},
+                Flags: []FlagDef[vo.ContributionVO]{
+                        {Name: "roles", Attr: "Roles", Repeated: true, Usage: "role such as author, artist (repeatable)", Set: func(v *vo.ContributionVO, vals []string) (any, error) <span class="cov1" title="1">{
+                                v.Roles = append([]string(nil), vals...)
+                                return v.Roles, nil
+                        }</span>},
+                        {Name: "notes", Attr: "notes", Usage: "internal notes", Set: textSetter(func(v *vo.ContributionVO) *string <span class="cov0" title="0">{ return &amp;v.Notes }</span>)},
+                },
+        }
+}
+</pre>
+		
+		<pre class="file" id="file17" style="display: none">package cmd
+
+import (
+        "encoding/json"
+        "fmt"
+        "reflect"
+        "sort"
+        "strings"
+
+        "github.com/spf13/cobra"
+        "gopkg.in/yaml.v3"
+)
+
+type outputFormat int
+
+const (
+        formatHuman outputFormat = iota
+        formatJSON
+        formatYAML
+)
+
+// changedFlag reports whether a boolean flag was explicitly provided.
+func changedFlag(cmd *cobra.Command, name string) bool <span class="cov8" title="18">{
+        fl := cmd.Flags().Lookup(name)
+        return fl != nil &amp;&amp; fl.Changed &amp;&amp; fl.Value.String() == "true"
+}</span>
+
+// formatFromFlags resolves the --json/--yaml pair into one output format.
+func formatFromFlags(cmd *cobra.Command) (outputFormat, error) <span class="cov6" title="9">{
+        jsonFlag := changedFlag(cmd, "json")
+        yamlFlag := changedFlag(cmd, "yaml")
+        switch </span>{
+        case jsonFlag &amp;&amp; yamlFlag:<span class="cov2" title="2">
+                return formatHuman, usageErr("--json and --yaml are mutually exclusive")</span>
+        case jsonFlag:<span class="cov2" title="2">
+                return formatJSON, nil</span>
+        case yamlFlag:<span class="cov1" title="1">
+                return formatYAML, nil</span>
+        default:<span class="cov4" title="4">
+                return formatHuman, nil</span>
+        }
+}
+
+// printRecord renders a record in the requested format.
+func printRecord(cmd *cobra.Command, rec any, format outputFormat) error <span class="cov5" title="5">{
+        var (
+                out []byte
+                err error
+        )
+        switch format </span>{
+        case formatJSON:<span class="cov2" title="2">
+                out, err = json.MarshalIndent(rec, "", "  ")
+                out = append(out, '\n')</span>
+        case formatYAML:<span class="cov1" title="1">
+                out, err = yaml.Marshal(rec)</span>
+        default:<span class="cov2" title="2">
+                out = []byte(humanRecord(rec))</span>
+        }
+        <span class="cov5" title="5">if err != nil </span><span class="cov0" title="0">{
+                return err
+        }</span>
+        <span class="cov5" title="5">_, err = cmd.OutOrStdout().Write(out)
+        return err</span>
+}
+
+// humanRecord renders struct fields as aligned key: value lines, skipping
+// empty values; slices of structs expand one item per line.
+func humanRecord(rec any) string <span class="cov2" title="2">{
+        var b strings.Builder
+        writeStruct(&amp;b, reflect.ValueOf(rec), 0)
+        return b.String()
+}</span>
+
+func writeStruct(b *strings.Builder, v reflect.Value, indent int) <span class="cov4" title="4">{
+        for v.Kind() == reflect.Pointer </span><span class="cov2" title="2">{
+                if v.IsNil() </span><span class="cov0" title="0">{
+                        return
+                }</span>
+                <span class="cov2" title="2">v = v.Elem()</span>
+        }
+        <span class="cov4" title="4">if v.Kind() != reflect.Struct </span><span class="cov0" title="0">{
+                return
+        }</span>
+        <span class="cov4" title="4">t := v.Type()
+        pad := strings.Repeat("  ", indent)
+        for i := 0; i &lt; t.NumField(); i++ </span><span class="cov10" title="28">{
+                field := t.Field(i)
+                if !field.IsExported() </span><span class="cov0" title="0">{
+                        continue</span>
+                }
+                <span class="cov10" title="28">key := field.Name
+                if tag := field.Tag.Get("json"); tag != "" &amp;&amp; tag != "-" </span><span class="cov9" title="26">{
+                        key = strings.Split(tag, ",")[0]
+                }</span>
+                <span class="cov10" title="28">fv := v.Field(i)
+                if field.Anonymous &amp;&amp; fv.Kind() == reflect.Struct </span><span class="cov2" title="2">{
+                        writeStruct(b, fv, indent)
+                        continue</span>
+                }
+                <span class="cov9" title="26">if isEmptyValue(fv) </span><span class="cov9" title="22">{
+                        continue</span>
+                }
+                <span class="cov4" title="4">if fv.Kind() == reflect.Slice &amp;&amp; fieldIsStructSlice(fv) </span><span class="cov0" title="0">{
+                        fmt.Fprintf(b, "%s%s:\n", pad, key)
+                        for j := 0; j &lt; fv.Len(); j++ </span><span class="cov0" title="0">{
+                                writeStruct(b, fv.Index(j), indent+1)
+                        }</span>
+                        <span class="cov0" title="0">continue</span>
+                }
+                <span class="cov4" title="4">fmt.Fprintf(b, "%s%-14s %s\n", pad, key+":", displayValue(fv))</span>
+        }
+}
+
+func fieldIsStructSlice(v reflect.Value) bool <span class="cov0" title="0">{
+        elem := v.Type().Elem()
+        isValueStruct := elem.Kind() == reflect.Struct
+        isPointerToStruct := elem.Kind() == reflect.Pointer &amp;&amp; elem.Elem().Kind() == reflect.Struct
+        if !isValueStruct &amp;&amp; !isPointerToStruct </span><span class="cov0" title="0">{
+                return false
+        }</span>
+        <span class="cov0" title="0">return v.Len() &gt; 0</span>
+}
+
+func displayValue(v reflect.Value) string <span class="cov4" title="4">{
+        for v.Kind() == reflect.Pointer || v.Kind() == reflect.Interface </span><span class="cov0" title="0">{
+                v = v.Elem()
+        }</span>
+        <span class="cov4" title="4">switch v.Kind() </span>{
+        case reflect.Slice:<span class="cov0" title="0">
+                parts := make([]string, 0, v.Len())
+                for i := 0; i &lt; v.Len(); i++ </span><span class="cov0" title="0">{
+                        parts = append(parts, displayValue(v.Index(i)))
+                }</span>
+                <span class="cov0" title="0">return "[" + strings.Join(parts, ", ") + "]"</span>
+        case reflect.Struct:<span class="cov0" title="0">
+                if s, ok := shortStruct(v); ok </span><span class="cov0" title="0">{
+                        return s
+                }</span>
+        }
+        <span class="cov4" title="4">return fmt.Sprintf("%v", v.Interface())</span>
+}
+
+// shortStruct renders small value structs (tags, properties) inline.
+func shortStruct(v reflect.Value) (string, bool) <span class="cov0" title="0">{
+        t := v.Type()
+        parts := []string{}
+        for i := 0; i &lt; t.NumField(); i++ </span><span class="cov0" title="0">{
+                field := t.Field(i)
+                if !field.IsExported() </span><span class="cov0" title="0">{
+                        continue</span>
+                }
+                <span class="cov0" title="0">fv := v.Field(i)
+                if isEmptyValue(fv) </span><span class="cov0" title="0">{
+                        continue</span>
+                }
+                <span class="cov0" title="0">key := field.Name
+                if tag := field.Tag.Get("json"); tag != "" &amp;&amp; tag != "-" </span><span class="cov0" title="0">{
+                        key = strings.Split(tag, ",")[0]
+                }</span>
+                <span class="cov0" title="0">val := fmt.Sprintf("%v", fv.Interface())
+                if len(val) &gt; 40 </span><span class="cov0" title="0">{
+                        return "", false
+                }</span>
+                <span class="cov0" title="0">parts = append(parts, fmt.Sprintf("%s=%s", key, val))</span>
+        }
+        <span class="cov0" title="0">if len(parts) == 0 </span><span class="cov0" title="0">{
+                return "", false
+        }</span>
+        <span class="cov0" title="0">sort.Strings(parts)
+        return "{" + strings.Join(parts, " ") + "}", true</span>
+}
+
+func isEmptyValue(v reflect.Value) bool <span class="cov9" title="26">{
+        switch v.Kind() </span>{
+        case reflect.Pointer, reflect.Interface:<span class="cov4" title="4">
+                return v.IsNil()</span>
+        case reflect.Slice, reflect.Map:<span class="cov4" title="4">
+                return v.Len() == 0</span>
+        case reflect.String:<span class="cov8" title="14">
+                return v.Len() == 0</span>
+        case reflect.Struct:<span class="cov4" title="4">
+                if t := v.Type(); t.String() == "time.Time" </span><span class="cov4" title="4">{
+                        return v.MethodByName("IsZero").Call(nil)[0].Bool()
+                }</span>
+                <span class="cov0" title="0">return false</span>
+        default:<span class="cov0" title="0">
+                return false</span>
+        }
+}
+</pre>
+		
+		<pre class="file" id="file18" style="display: none">package cmd
+
+import (
+        "context"
+        "fmt"
+        "slices"
+
+        "github.com/spf13/cobra"
+        "github.com/sweetrpg/catalog-cli/internal/client"
+        vo "github.com/sweetrpg/catalog-objects.go/vo"
+)
+
+// linkRule is one supported pairing, stored volume-first. Direct rules patch a
+// full-replace ID array on the volume (Field); person links go through the
+// credits diff, which the server reconciles into contribution records.
+// volume-license is deliberately absent: catalog-objects models the relation,
+// but catalog-api's patch request has no licenseIds field, so there is no
+// write surface for it.
+type linkRule struct {
+        a, b  string
+        field string // volume PATCH wire key: "publisherIds" | "studioIds" | "systemIds" | "credits"
+}
+
+var linkMatrix = []linkRule{
+        {a: "volume", b: "publisher", field: "publisherIds"},
+        {a: "volume", b: "studio", field: "studioIds"},
+        {a: "volume", b: "system", field: "systemIds"},
+        {a: "volume", b: "person", field: "credits"},
+}
+
+func findLinkRule(t1, t2 string) (linkRule, bool) <span class="cov7" title="14">{
+        for _, r := range linkMatrix </span><span class="cov10" title="35">{
+                if (r.a == t1 &amp;&amp; r.b == t2) || (r.a == t2 &amp;&amp; r.b == t1) </span><span class="cov7" title="12">{
+                        return r, true
+                }</span>
+        }
+        <span class="cov2" title="2">return linkRule{}, false</span>
+}
+
+// counterpartList names every type t may link to, for invalid-pairing errors.
+func counterpartList(t string) []string <span class="cov2" title="2">{
+        out := []string{}
+        for _, r := range linkMatrix </span><span class="cov6" title="8">{
+                if r.a == t </span><span class="cov0" title="0">{
+                        out = append(out, r.b)
+                }</span> else<span class="cov6" title="8"> if r.b == t </span><span class="cov2" title="2">{
+                        out = append(out, r.a)
+                }</span>
+        }
+        <span class="cov2" title="2">return out</span>
+}
+
+// creditPair mirrors catalog-api's creditRequest: one desired
+// (person, contribution type) entry of the volume's full-replace credits list.
+type creditPair struct {
+        PersonID string `json:"personId"`
+        Role     string `json:"contributionType"`
+}
+
+// flagRole holds --role for the running command; only one command executes
+// per process, so a shared var matches the other flag globals here.
+var flagRole string
+
+func newLinkCommand() *cobra.Command <span class="cov8" title="17">{
+        link := &amp;cobra.Command{
+                Use:   "link &lt;type1&gt; &lt;name-or-id1&gt; &lt;type2&gt; &lt;name-or-id2&gt;",
+                Short: "Connect two catalog entities",
+                Long: "Connect two catalog entities, either argument order accepted, e.g.\n" +
+                        "  sweetrpg-catalog link volume \"Dungeon World\" publisher \"Evil Hat Productions\"\n\n" +
+                        "Supported pairs: volume-publisher, volume-studio, volume-system, volume-person.\n" +
+                        "Person links take --role and are stored as contribution records.",
+                Args: cobra.ExactArgs(4),
+                RunE: func(cmd *cobra.Command, args []string) error </span><span class="cov7" title="12">{
+                        return runPair(cmd, args, true)
+                }</span>,
+        }
+        <span class="cov8" title="17">link.Flags().StringVar(&amp;flagRole, "role", "author", "contribution role for person links (e.g. author, artist)")
+        return link</span>
+}
+
+func newUnlinkCommand() *cobra.Command <span class="cov5" title="5">{
+        unlink := &amp;cobra.Command{
+                Use:   "unlink &lt;type1&gt; &lt;name-or-id1&gt; &lt;type2&gt; &lt;name-or-id2&gt;",
+                Short: "Disconnect two linked catalog entities",
+                Long: "Disconnect two linked catalog entities, either argument order accepted.\n" +
+                        "Unlinking a person drops every role they hold on the volume.",
+                Args: cobra.ExactArgs(4),
+                RunE: func(cmd *cobra.Command, args []string) error </span><span class="cov4" title="4">{
+                        return runPair(cmd, args, false)
+                }</span>,
+        }
+        <span class="cov5" title="5">unlink.Flags().StringVar(&amp;flagRole, "role", "author", "contribution role for person links (e.g. author, artist)")
+        return unlink</span>
+}
+
+// runPair validates the pairing, resolves both refs, and applies or removes
+// the link. Work always happens on the volume side of the rule.
+func runPair(cmd *cobra.Command, args []string, add bool) error <span class="cov8" title="16">{
+        t1, ref1, t2, ref2 := args[0], args[1], args[2], args[3]
+        opsA, ok := entityRegistry[t1]
+        if !ok </span><span class="cov2" title="2">{
+                return usageErr("unknown entity type %q; valid types: %s", t1, joinList(sortedEntityNames()))
+        }</span>
+        <span class="cov7" title="14">opsB, ok := entityRegistry[t2]
+        if !ok </span><span class="cov0" title="0">{
+                return usageErr("unknown entity type %q; valid types: %s", t2, joinList(sortedEntityNames()))
+        }</span>
+        <span class="cov7" title="14">rule, ok := findLinkRule(t1, t2)
+        if !ok </span><span class="cov2" title="2">{
+                return usageErr("links between %s and %s aren't supported; valid counterparts for %s: %s",
+                        t1, t2, t1, joinList(counterpartList(t1)))
+        }</span>
+
+        <span class="cov7" title="12">c, err := buildAPIClient()
+        if err != nil </span><span class="cov0" title="0">{
+                return err
+        }</span>
+        <span class="cov7" title="12">ctx := cmd.Context()
+
+        idForType := map[string]string{}
+        for _, side := range []struct {
+                ops entityOps
+                ref string
+        }{{opsA, ref1}, {opsB, ref2}} </span><span class="cov9" title="24">{
+                id, err := resolveRef(ctx, c, side.ops, side.ref)
+                if err != nil </span><span class="cov0" title="0">{
+                        return err
+                }</span>
+                <span class="cov9" title="24">idForType[side.ops.spec.Name] = id</span>
+        }
+        <span class="cov7" title="12">volOps := entityRegistry[rule.a]
+        volID, otherID := idForType[rule.a], idForType[rule.b]
+
+        fields, verb, notice, err := planLinkChange(ctx, c, volOps, volID, otherID, rule, add)
+        if err != nil </span><span class="cov0" title="0">{
+                return err
+        }</span>
+        <span class="cov7" title="12">if notice != "" </span><span class="cov4" title="4">{
+                cmd.Println(notice)
+                return nil
+        }</span>
+        <span class="cov6" title="8">if _, disp, err := volOps.patch(ctx, c, volID, fields); err != nil </span><span class="cov0" title="0">{
+                return writeErr(err)
+        }</span> else<span class="cov6" title="8"> if text := dispositionText(disp); text != "" </span><span class="cov6" title="8">{
+                cmd.Println(text)
+        }</span>
+        <span class="cov6" title="8">prep := map[bool]string{true: "to", false: "from"}[add]
+        cmd.Printf("%s %s %s %s volume %s\n", verb, rule.b, otherID, prep, volID)
+        return nil</span>
+}
+
+// planLinkChange reads current state and returns the full-replace PATCH body,
+// the action verb, or a notice when nothing changes (idempotent re-link /
+// absent-pair unlink exit zero).
+func planLinkChange(
+        ctx context.Context, c *client.Client, volOps entityOps,
+        volID, otherID string, rule linkRule, add bool,
+) (fields map[string]any, verb, notice string, err error) <span class="cov7" title="12">{
+        if rule.field == "credits" </span><span class="cov4" title="4">{
+                return planCreditsChange(ctx, c, volID, otherID, add)
+        }</span>
+
+        <span class="cov6" title="8">rec, gerr := client.Get[vo.VolumeVO](ctx, c, volOps.spec.Plural, volID)
+        if gerr != nil </span><span class="cov0" title="0">{
+                return nil, "", "", writeErr(gerr)
+        }</span>
+        <span class="cov6" title="8">current := relationIDs(rec, rule.field)
+        linked := slices.Contains(current, otherID)
+
+        switch </span>{
+        case add &amp;&amp; linked:<span class="cov1" title="1">
+                return nil, "", fmt.Sprintf("%s %s is already linked to volume %s", rule.b, otherID, volID), nil</span>
+        case !add &amp;&amp; !linked:<span class="cov1" title="1">
+                return nil, "", fmt.Sprintf("%s %s isn't linked to volume %s", rule.b, otherID, volID), nil</span>
+        case add:<span class="cov5" title="5">
+                current = append(current, otherID)</span>
+        default:<span class="cov1" title="1">
+                current = slices.DeleteFunc(current, func(id string) bool </span><span class="cov2" title="2">{ return id == otherID }</span>)
+        }
+        <span class="cov5" title="6">verb = map[bool]string{true: "Linked", false: "Unlinked"}[add]
+        return map[string]any{rule.field: current}, verb, "", nil</span>
+}
+
+// planCreditsChange diffs the volume's single-role contribution pairs against
+// the desired set, mirroring applyCreditsDiff on the server: adding appends
+// one pair; removing drops every role the person holds on this volume.
+func planCreditsChange(
+        ctx context.Context, c *client.Client, volID, personID string, add bool,
+) (map[string]any, string, string, error) <span class="cov4" title="4">{
+        contribs, err := client.List[vo.ContributionVO](ctx, c, "contributions", client.ListOptions{
+                Filters: []client.Filter{{Field: "volume_id", Values: []string{volID}}},
+        })
+        if err != nil </span><span class="cov0" title="0">{
+                return nil, "", "", writeErr(err)
+        }</span>
+        <span class="cov4" title="4">pairs := make([]creditPair, 0, len(contribs))
+        for _, con := range contribs </span><span class="cov3" title="3">{
+                if con.Person == nil || len(con.Roles) != 1 </span><span class="cov0" title="0">{
+                        continue</span> // multi-role contributions aren't representable as one pair
+                }
+                <span class="cov3" title="3">pairs = append(pairs, creditPair{PersonID: con.Person.ID, Role: con.Roles[0]})</span>
+        }
+        <span class="cov4" title="4">hasRequested := slices.Contains(pairs, creditPair{PersonID: personID, Role: flagRole})
+        hasAny := slices.ContainsFunc(pairs, func(p creditPair) bool </span><span class="cov2" title="2">{ return p.PersonID == personID }</span>)
+
+        <span class="cov4" title="4">switch </span>{
+        case add &amp;&amp; hasRequested:<span class="cov1" title="1">
+                return nil, "", fmt.Sprintf("person %s already holds the %s credit on volume %s", personID, flagRole, volID), nil</span>
+        case !add &amp;&amp; !hasAny:<span class="cov1" title="1">
+                return nil, "", fmt.Sprintf("person %s isn't linked to volume %s", personID, volID), nil</span>
+        case add:<span class="cov1" title="1">
+                pairs = append(pairs, creditPair{PersonID: personID, Role: flagRole})</span>
+        default:<span class="cov1" title="1">
+                pairs = slices.DeleteFunc(pairs, func(p creditPair) bool </span><span class="cov2" title="2">{ return p.PersonID == personID }</span>)
+        }
+        <span class="cov2" title="2">verb := map[bool]string{true: "Linked", false: "Unlinked"}[add]
+        return map[string]any{"credits": pairs}, verb, "", nil</span>
+}
+
+// relationIDs reads the current ID list off the volume for one patch field.
+// Field names compile against VolumeVO's json tags, so schema drift breaks
+// the build here too.
+func relationIDs(v *vo.VolumeVO, field string) []string <span class="cov6" title="8">{
+        switch field </span>{
+        case "publisherIds":<span class="cov5" title="6">
+                return pointerIDs(v.Publishers)</span>
+        case "studioIds":<span class="cov1" title="1">
+                return pointerIDs(v.Studios)</span>
+        case "systemIds":<span class="cov1" title="1">
+                return pointerIDs(v.Systems)</span>
+        default:<span class="cov0" title="0">
+                return nil</span>
+        }
+}
+
+// pointerIDs collects IDs from a VO relation slice; nil entries are skipped.
+func pointerIDs[T any](srcs []*T) []string <span class="cov6" title="8">{
+        out := make([]string, 0, len(srcs))
+        for _, s := range srcs </span><span class="cov3" title="3">{
+                if s == nil </span><span class="cov0" title="0">{
+                        continue</span>
+                }
+                <span class="cov3" title="3">out = append(out, voID(s))</span>
+        }
+        <span class="cov6" title="8">return out</span>
+}
+</pre>
+		
+		<pre class="file" id="file19" style="display: none">package cmd
+
+import (
+        "context"
+        "errors"
+        "fmt"
+        "os"
+        "regexp"
+
+        "github.com/manifoldco/promptui"
+        "github.com/spf13/cobra"
+        "github.com/sweetrpg/catalog-cli/internal/client"
+)
+
+var (
+        flagYes   bool
+        flagForce bool
+
+        // stdoutIsTTY and pickCandidate are vars so tests can drive both branches.
+        stdoutIsTTY   = defaultIsTTY
+        pickCandidate = interactivePick
+)
+
+var objectIDPattern = regexp.MustCompile(`^[0-9a-fA-F]{24}$`)
+
+func defaultIsTTY() bool <span class="cov0" title="0">{
+        info, err := os.Stdout.Stat()
+        if err != nil </span><span class="cov0" title="0">{
+                return false
+        }</span>
+        <span class="cov0" title="0">return info.Mode()&amp;os.ModeCharDevice != 0</span>
+}
+
+// resolveRef maps a &lt;name-or-id&gt; argument to a record ID: ID-shaped strings
+// short-circuit; names resolve via search, prompting only when ambiguous.
+func resolveRef(ctx context.Context, c *client.Client, ops entityOps, ref string) (string, error) <span class="cov10" title="47">{
+        if objectIDPattern.MatchString(ref) </span><span class="cov9" title="40">{
+                return ref, nil
+        }</span>
+        <span class="cov5" title="7">candidates, err := ops.find(ctx, c, ref)
+        if err != nil </span><span class="cov0" title="0">{
+                return "", err
+        }</span>
+        <span class="cov5" title="7">switch len(candidates) </span>{
+        case 0:<span class="cov1" title="1">
+                return "", fmt.Errorf("no %s record found for %q", ops.spec.Name, ref)</span>
+        case 1:<span class="cov2" title="2">
+                return candidates[0].ID, nil</span>
+        }
+        <span class="cov4" title="4">if flagYes || !stdoutIsTTY() </span><span class="cov2" title="2">{
+                lines := make([]string, 0, len(candidates))
+                for _, cand := range candidates </span><span class="cov4" title="4">{
+                        lines = append(lines, fmt.Sprintf("%s (%s) %s", cand.ID, cand.Label, cand.Detail))
+                }</span>
+                <span class="cov2" title="2">return "", fmt.Errorf("%q is ambiguous - %d %s records match; pass an ID instead:\n%s",
+                        ref, len(candidates), ops.spec.Name, joinList(lines))</span>
+        }
+        <span class="cov2" title="2">idx, err := pickCandidate(candidates)
+        if err != nil </span><span class="cov1" title="1">{
+                return "", fmt.Errorf("selection cancelled: %w", err)
+        }</span>
+        <span class="cov1" title="1">return candidates[idx].ID, nil</span>
+}
+
+// interactivePick shows a promptui selector over ambiguous candidates.
+func interactivePick(candidates []candidate) (int, error) <span class="cov0" title="0">{
+        items := make([]string, len(candidates))
+        for i, cand := range candidates </span><span class="cov0" title="0">{
+                detail := cand.Detail
+                if detail != "" </span><span class="cov0" title="0">{
+                        detail = " " + detail
+                }</span>
+                <span class="cov0" title="0">items[i] = fmt.Sprintf("%s%s [%s]", cand.Label, detail, cand.ID)</span>
+        }
+        <span class="cov0" title="0">prompt := promptui.Select{
+                Label: "Multiple matches - choose one",
+                Items: items,
+                Size:  10,
+                Templates: &amp;promptui.SelectTemplates{
+                        Label:    "{{ . }}:",
+                        Active:   fmt.Sprintf("%s {{ . | cyan }}", promptui.IconSelect),
+                        Inactive: "  {{ . }}",
+                        Selected: fmt.Sprintf("%s {{ . }}", promptui.IconGood),
+                },
+        }
+        idx, _, err := prompt.Run()
+        return idx, err</span>
+}
+
+// confirmPrompt asks the user interactively; a var so tests can override.
+var confirmPrompt = interactiveConfirm
+
+func interactiveConfirm(label string) bool <span class="cov0" title="0">{
+        prompt := promptui.Prompt{
+                Label:     label,
+                IsConfirm: true,
+                Default:   "n",
+        }
+        result, err := prompt.Run()
+        if err != nil </span><span class="cov0" title="0">{
+                return false
+        }</span>
+        <span class="cov0" title="0">return result == "y" || result == "Y" || result == "yes"</span>
+}
+
+// ErrDeclined marks a user-declined confirmation: a normal outcome that must
+// exit 0 without touching the API.
+var ErrDeclined = errors.New("declined")
+
+// confirmDelete enforces explicit confirmation before destructive deletes.
+func confirmDelete(cmd *cobra.Command, entity, id string) error <span class="cov5" title="8">{
+        if flagForce </span><span class="cov3" title="3">{
+                return nil
+        }</span>
+        <span class="cov4" title="5">if flagYes || !stdoutIsTTY() </span><span class="cov2" title="2">{
+                return fmt.Errorf("refusing to delete %s %s in non-interactive mode without --force", entity, id)
+        }</span>
+        <span class="cov3" title="3">if !confirmPrompt(fmt.Sprintf("Delete %s %s? This cannot be undone", entity, id)) </span><span class="cov2" title="2">{
+                return ErrDeclined
+        }</span>
+        <span class="cov1" title="1">return nil</span>
+}
+</pre>
+		
+		<pre class="file" id="file20" style="display: none">package cmd
+
+import (
+        "errors"
+        "fmt"
+        "strings"
+        "sync"
+
+        "github.com/spf13/cobra"
+)
 
 var rootCmd = &amp;cobra.Command{
         Use:   "sweetrpg-catalog",
         Short: "Command-line client for the SweetRPG catalog service",
+        Long: "Manage SweetRPG catalog records: volumes, publishers, studios, persons, systems,\n" +
+                "licenses, reviews, and contributions.\n\n" +
+                "Entity commands share one shape:\n" +
+                "  sweetrpg-catalog add &lt;type&gt; &lt;name&gt; [property flags]\n" +
+                "  sweetrpg-catalog edit &lt;type&gt; &lt;name-or-id&gt; [property flags]\n" +
+                "  sweetrpg-catalog view &lt;type&gt; &lt;name-or-id&gt; [--json | --yaml]\n" +
+                "  sweetrpg-catalog delete &lt;type&gt; &lt;name-or-id&gt; [--force]\n\n" +
+                "Links connect two entities (either argument order):\n" +
+                "  sweetrpg-catalog link volume \"Dungeon World\" publisher \"Evil Hat Productions\"\n\n" +
+                "Name arguments resolve to record IDs; 24-hex IDs are used directly. Ambiguous names\n" +
+                "prompt a picker, or fail with the candidate list when --yes is set.\n\n" +
+                "Shell completion: sweetrpg-catalog completion [bash|zsh|fish|powershell]\n" +
+                "Exit codes: 0 success, 1 error, 2 usage, 3 authentication.",
+}
+
+var buildOnce sync.Once
+
+// buildTree attaches generated subcommands. It runs lazily (not in init) so
+// the entity registry is fully populated regardless of file init order.
+func buildTree() <span class="cov9" title="8">{
+        buildOnce.Do(func() </span><span class="cov1" title="1">{
+                rootCmd.PersistentFlags().StringVar(&amp;flagAPIURL, "api-url", "", "catalog API base URL (overrides env and config file)")
+                rootCmd.PersistentFlags().StringVar(&amp;flagAssetsWebURL, "assets-web-url", "", "assets-web base URL for asset uploads")
+                rootCmd.PersistentFlags().BoolVar(&amp;flagYes, "yes", false, "assume non-interactive mode; fail on ambiguity with the candidate list")
+                rootCmd.PersistentFlags().BoolVar(&amp;flagCurl, "curl", false, "print the equivalent cURL command(s) instead of calling the API")
+                rootCmd.AddCommand(newAddCommand())
+                rootCmd.AddCommand(newEditCommand())
+                rootCmd.AddCommand(newViewCommand())
+                rootCmd.AddCommand(newDeleteCommand())
+                rootCmd.AddCommand(newLinkCommand())
+                rootCmd.AddCommand(newUnlinkCommand())
+                rootCmd.AddCommand(newSearchCommand())
+        }</span>)
 }
 
 // Execute runs the root command. Errors returned by subcommands are printed by
 // cobra; the exit code is decided here so subcommands can signal specific codes.
-func Execute() error <span class="cov0" title="0">{
-        return rootCmd.Execute()
+func Execute() error <span class="cov7" title="5">{
+        buildTree()
+        rootCmd.SetFlagErrorFunc(func(_ *cobra.Command, err error) error </span><span class="cov0" title="0">{
+                return &amp;ExitError{Code: 2, Err: err}
+        }</span>)
+        <span class="cov7" title="5">err := classifyUsage(rootCmd.Execute())
+        // A --curl run that rendered its request(s) is a success, even though the
+        // capture transport aborts the flow with a sentinel.
+        if isCurlExit(err) </span><span class="cov1" title="1">{
+                return nil
+        }</span>
+        <span class="cov6" title="4">return err</span>
+}
+
+// classifyUsage maps cobra's untyped command/argument errors to the documented
+// usage exit code. Cobra has no typed errors for these; the message shapes it
+// produces for them are stable.
+func classifyUsage(err error) error <span class="cov10" title="10">{
+        if err == nil </span><span class="cov7" title="5">{
+                return nil
+        }</span>
+        <span class="cov7" title="5">var ec ExitCoder
+        if errors.As(err, &amp;ec) </span><span class="cov0" title="0">{
+                return err
+        }</span>
+        <span class="cov7" title="5">msg := err.Error()
+        if strings.HasPrefix(msg, "unknown command ") || strings.Contains(msg, " arg(s)") ||
+                strings.HasPrefix(msg, "unknown flag:") || strings.HasPrefix(msg, "unknown shorthand flag:") </span><span class="cov5" title="3">{
+                return &amp;ExitError{Code: 2, Err: err}
+        }</span>
+        <span class="cov3" title="2">return err</span>
+}
+
+// usageErr tags a validation failure as a usage error (exit code 2).
+func usageErr(format string, args ...any) error <span class="cov9" title="9">{
+        return &amp;ExitError{Code: 2, Err: fmt.Errorf(format, args...)}
 }</span>
 </pre>
 		
-		<pre class="file" id="file5" style="display: none">// Package config resolves CLI configuration from flags, environment, and the
+		<pre class="file" id="file21" style="display: none">package cmd
+
+import (
+        "fmt"
+
+        "github.com/spf13/cobra"
+)
+
+// searchCommand is kept as a var so tests can drive it without re-finding
+// the command tree.
+var searchCommand *cobra.Command
+
+func newSearchCommand() *cobra.Command <span class="cov1" title="1">{
+        searchCommand = &amp;cobra.Command{
+                Use:   "search &lt;type&gt; &lt;query&gt;",
+                Short: "List catalog records matching a case-insensitive partial name",
+                Long: `Search one catalog entity type by case-insensitive partial name or title
+match. Prints each hit's ID and display name so IDs can feed other commands.
+Exact matches are preferred; otherwise every record containing the query is listed.`,
+                Args: cobra.ExactArgs(2),
+                RunE: func(cmd *cobra.Command, args []string) error </span><span class="cov10" title="3">{
+                        ops, err := lookupEntity(args[0])
+                        if err != nil </span><span class="cov1" title="1">{
+                                return usageErr("%v", err)
+                        }</span>
+                        <span class="cov6" title="2">c, err := buildAnonClient()
+                        if err != nil </span><span class="cov0" title="0">{
+                                return err
+                        }</span>
+                        <span class="cov6" title="2">candidates, err := ops.find(cmd.Context(), c, args[1])
+                        if err != nil </span><span class="cov0" title="0">{
+                                return err
+                        }</span>
+                        <span class="cov6" title="2">out := cmd.OutOrStdout()
+                        if len(candidates) == 0 </span><span class="cov1" title="1">{
+                                _, _ = fmt.Fprintf(out, "no %s matches for %q\n", ops.spec.Name, args[1])
+                                return nil
+                        }</span>
+                        <span class="cov1" title="1">for _, cand := range candidates </span><span class="cov6" title="2">{
+                                detail := ""
+                                if cand.Detail != "" </span><span class="cov0" title="0">{
+                                        detail = " " + cand.Detail
+                                }</span>
+                                <span class="cov6" title="2">_, _ = fmt.Fprintf(out, "%s\t%s%s\n", cand.ID, cand.Label, detail)</span>
+                        }
+                        <span class="cov1" title="1">_, _ = fmt.Fprintf(out, "\n%d %s match(es)\n", len(candidates), ops.spec.Name)
+                        return nil</span>
+                },
+        }
+        <span class="cov1" title="1">return searchCommand</span>
+}
+</pre>
+		
+		<pre class="file" id="file22" style="display: none">// Package config resolves CLI configuration from flags, environment, and the
 // config file. Only non-secret settings live in the file; tokens go to the OS
 // keychain.
 package config
@@ -503,89 +3361,103 @@ const FileName = "catalog-cli.yaml"
 
 // Config holds resolved settings for one command run.
 type Config struct {
-        APIURL string
-        Output string
+        APIURL       string
+        AssetsWebURL string
+        Output       string
 }
 
 // Sources carries the raw inputs to resolution. Getenv and HomeDir are
 // injectable so tests never touch process state.
 type Sources struct {
-        FlagAPIURL string
-        Getenv     func(string) string
-        HomeDir    func() (string, error)
+        FlagAPIURL       string
+        FlagAssetsWebURL string
+        Getenv           func(string) string
+        HomeDir          func() (string, error)
 }
 
 // Load resolves configuration by precedence: flag &gt; environment &gt; config file.
 // A missing base URL yields an error naming every source so users can fix it
 // without reading docs.
-func Load(s Sources) (*Config, error) <span class="cov8" title="11">{
+func Load(s Sources) (*Config, error) <span class="cov7" title="16">{
         file, err := loadFile(s.HomeDir)
         if err != nil </span><span class="cov1" title="1">{
                 return nil, err
         }</span>
 
-        <span class="cov7" title="10">apiURL := firstNonEmpty(s.FlagAPIURL, s.Getenv("SWEETRPG_CATALOG_API_URL"), file.APIURL)
-        if apiURL == "" </span><span class="cov4" title="3">{
+        <span class="cov7" title="15">apiURL := firstNonEmpty(s.FlagAPIURL, s.Getenv("SWEETRPG_CATALOG_API_URL"), file.APIURL)
+        if apiURL == "" </span><span class="cov3" title="3">{
                 return nil, fmt.Errorf(
                         "no catalog API base URL configured: pass --api-url, export SWEETRPG_CATALOG_API_URL, or set api-url in %s",
                         filePath(s.HomeDir),
                 )
         }</span>
-        <span class="cov6" title="7">parsed, err := url.Parse(apiURL)
-        if err != nil || (parsed.Scheme != "http" &amp;&amp; parsed.Scheme != "https") || parsed.Host == "" </span><span class="cov3" title="2">{
+        <span class="cov6" title="12">parsed, err := url.Parse(apiURL)
+        if err != nil || (parsed.Scheme != "http" &amp;&amp; parsed.Scheme != "https") || parsed.Host == "" </span><span class="cov2" title="2">{
                 return nil, fmt.Errorf("invalid catalog API base URL %q: must be an http(s) URL with a host", apiURL)
         }</span>
 
-        <span class="cov5" title="5">output := file.Output
-        if output == "" </span><span class="cov3" title="2">{
+        // Optional: only asset commands need it, so absence is fine and validated
+        // only when something is set.
+        <span class="cov6" title="10">assetsWebURL := firstNonEmpty(s.FlagAssetsWebURL, s.Getenv("SWEETRPG_ASSETS_WEB_URL"), file.AssetsWebURL)
+        if assetsWebURL != "" </span><span class="cov5" title="8">{
+                parsedAssets, err := url.Parse(assetsWebURL)
+                if err != nil || (parsedAssets.Scheme != "http" &amp;&amp; parsedAssets.Scheme != "https") || parsedAssets.Host == "" </span><span class="cov1" title="1">{
+                        return nil, fmt.Errorf("invalid assets web base URL %q: must be an http(s) URL with a host", assetsWebURL)
+                }</span>
+        }
+
+        <span class="cov6" title="9">output := file.Output
+        if output == "" </span><span class="cov4" title="5">{
                 output = DefaultOutputFormat
         }</span>
-        <span class="cov5" title="5">return &amp;Config{APIURL: apiURL, Output: output}, nil</span>
+        <span class="cov6" title="9">return &amp;Config{APIURL: apiURL, AssetsWebURL: assetsWebURL, Output: output}, nil</span>
 }
 
 type fileConfig struct {
-        APIURL string `yaml:"api-url"`
-        Output string `yaml:"output"`
+        APIURL       string `yaml:"api-url"`
+        AssetsWebURL string `yaml:"assets-web-url"`
+        Output       string `yaml:"output"`
 }
 
-func loadFile(homeDir func() (string, error)) (*fileConfig, error) <span class="cov8" title="11">{
+func loadFile(homeDir func() (string, error)) (*fileConfig, error) <span class="cov7" title="16">{
         path := filePath(homeDir)
         if path == "" </span><span class="cov1" title="1">{
                 return &amp;fileConfig{}, nil
         }</span>
-        <span class="cov7" title="10">data, err := os.ReadFile(path)
-        if errors.Is(err, os.ErrNotExist) </span><span class="cov5" title="5">{
+        <span class="cov7" title="15">data, err := os.ReadFile(path)
+        if errors.Is(err, os.ErrNotExist) </span><span class="cov5" title="6">{
                 return &amp;fileConfig{}, nil
         }</span>
-        <span class="cov5" title="5">if err != nil </span><span class="cov0" title="0">{
+        <span class="cov6" title="9">if err != nil </span><span class="cov0" title="0">{
                 return nil, fmt.Errorf("reading config file %s: %w", path, err)
         }</span>
-        <span class="cov5" title="5">var fc fileConfig
+        <span class="cov6" title="9">var fc fileConfig
         if err := yaml.Unmarshal(data, &amp;fc); err != nil </span><span class="cov1" title="1">{
                 return nil, fmt.Errorf("parsing config file %s: %w", path, err)
         }</span>
-        <span class="cov5" title="4">fc.APIURL = strings.TrimSpace(fc.APIURL)
+        <span class="cov5" title="8">fc.APIURL = strings.TrimSpace(fc.APIURL)
+        fc.AssetsWebURL = strings.TrimSpace(fc.AssetsWebURL)
         fc.Output = strings.TrimSpace(fc.Output)
         return &amp;fc, nil</span>
 }
 
 // filePath returns ~/.config/sweetrpg/catalog-cli.yaml, or "" when no home
 // directory is available (the file layer is then simply absent).
-func filePath(homeDir func() (string, error)) string <span class="cov8" title="14">{
+func filePath(homeDir func() (string, error)) string <span class="cov7" title="19">{
         home, err := homeDir()
         if err != nil || home == "" </span><span class="cov1" title="1">{
                 return ""
         }</span>
-        <span class="cov8" title="13">return filepath.Join(home, ".config", "sweetrpg", FileName)</span>
+        <span class="cov7" title="18">return filepath.Join(home, ".config", "sweetrpg", FileName)</span>
 }
 
-func firstNonEmpty(values ...string) string <span class="cov7" title="10">{
-        for _, v := range values </span><span class="cov10" title="21">{
-                if t := strings.TrimSpace(v); t != "" </span><span class="cov6" title="7">{
+func firstNonEmpty(values ...string) string <span class="cov8" title="25">{
+        for _, v := range values </span><span class="cov10" title="48">{
+                if t := strings.TrimSpace(v); t != "" </span><span class="cov7" title="20">{
                         return t
                 }</span>
         }
-        <span class="cov4" title="3">return ""</span>
+        <span class="cov4" title="5">return ""</span>
 }
 </pre>
 		
