@@ -78,6 +78,11 @@ func newAPIClient(requireAuth bool) (*client.Client, error) {
 	}
 	authCfg, err := auth.DefaultConfig()
 	if err != nil {
+		if !requireAuth {
+			// Reads are public; a binary built without baked-in auth settings
+			// (e.g. plain `go run`) still serves them, just with no token.
+			return client.New(cfg.APIURL, func(context.Context) (string, error) { return "", nil })
+		}
 		return nil, err
 	}
 	hc := &http.Client{Timeout: 30 * time.Second}

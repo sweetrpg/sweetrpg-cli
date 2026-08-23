@@ -161,3 +161,25 @@ func TestTokenFuncDowngradesNotLoggedInOnlyWhenOptional(t *testing.T) {
 		t.Errorf("want no token, got %q", token)
 	}
 }
+
+func TestViewBuildsWithoutBakedInAuthConfig(t *testing.T) {
+	oldDomain, oldClientID, oldAudience := auth.Domain, auth.ClientID, auth.Audience
+	auth.Domain, auth.ClientID, auth.Audience = "", "", ""
+	t.Cleanup(func() { auth.Domain, auth.ClientID, auth.Audience = oldDomain, oldClientID, oldAudience })
+
+	oldAPIURL := flagAPIURL
+	flagAPIURL = "http://127.0.0.1:1"
+	t.Cleanup(func() { flagAPIURL = oldAPIURL })
+
+	anon, err := buildAnonClient()
+	if err != nil {
+		t.Fatalf("anonymous client must build without auth config: %v", err)
+	}
+	if token, err := anon.Tokens(context.Background()); err != nil || token != "" {
+		t.Errorf("want empty unauthenticated token source, got (%q, %v)", token, err)
+	}
+
+	if _, err := buildAPIClient(); err == nil || !strings.Contains(err.Error(), "auth is not configured") {
+		t.Errorf("authenticated client should still refuse without config, got %v", err)
+	}
+}
