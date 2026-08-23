@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -59,6 +60,10 @@ func postForm(ctx context.Context, hc *http.Client, endpoint string, form url.Va
 			te.Description = strings.TrimSpace(string(body))
 		}
 		return te
+	}
+	// Endpoints like /oauth/revoke reply 2xx with an empty body; nothing to decode.
+	if len(bytes.TrimSpace(body)) == 0 {
+		return nil
 	}
 	if err := json.Unmarshal(body, out); err != nil {
 		return fmt.Errorf("decoding auth response: %w", err)

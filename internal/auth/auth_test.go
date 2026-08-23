@@ -493,6 +493,20 @@ func TestPostFormUnparseableErrorBody(t *testing.T) {
 	}
 }
 
+// Auth0's /oauth/revoke replies 2xx with an empty body; that must count as
+// success instead of a decode failure (regression: logout warned on every run).
+func TestPostFormAcceptsEmptySuccessBody(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(srv.Close)
+
+	out := map[string]any{}
+	if err := postForm(context.Background(), srv.Client(), srv.URL+"/x", url.Values{}, &out); err != nil {
+		t.Fatalf("empty 200 body must not error, got %v", err)
+	}
+}
+
 func TestKeyringStoreRoundTripsThroughInterface(t *testing.T) {
 	// KeyringStore talks to the OS keychain, which CI cannot assume; this
 	// pins its contract through MemoryStore semantics instead of skipping.
