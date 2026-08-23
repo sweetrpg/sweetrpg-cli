@@ -22,16 +22,18 @@ const FileName = "catalog-cli.yaml"
 
 // Config holds resolved settings for one command run.
 type Config struct {
-	APIURL string
-	Output string
+	APIURL       string
+	AssetsWebURL string
+	Output       string
 }
 
 // Sources carries the raw inputs to resolution. Getenv and HomeDir are
 // injectable so tests never touch process state.
 type Sources struct {
-	FlagAPIURL string
-	Getenv     func(string) string
-	HomeDir    func() (string, error)
+	FlagAPIURL       string
+	FlagAssetsWebURL string
+	Getenv           func(string) string
+	HomeDir          func() (string, error)
 }
 
 // Load resolves configuration by precedence: flag > environment > config file.
@@ -55,16 +57,27 @@ func Load(s Sources) (*Config, error) {
 		return nil, fmt.Errorf("invalid catalog API base URL %q: must be an http(s) URL with a host", apiURL)
 	}
 
+	// Optional: only asset commands need it, so absence is fine and validated
+	// only when something is set.
+	assetsWebURL := firstNonEmpty(s.FlagAssetsWebURL, s.Getenv("SWEETRPG_ASSETS_WEB_URL"), file.AssetsWebURL)
+	if assetsWebURL != "" {
+		parsedAssets, err := url.Parse(assetsWebURL)
+		if err != nil || (parsedAssets.Scheme != "http" && parsedAssets.Scheme != "https") || parsedAssets.Host == "" {
+			return nil, fmt.Errorf("invalid assets web base URL %q: must be an http(s) URL with a host", assetsWebURL)
+		}
+	}
+
 	output := file.Output
 	if output == "" {
 		output = DefaultOutputFormat
 	}
-	return &Config{APIURL: apiURL, Output: output}, nil
+	return &Config{APIURL: apiURL, AssetsWebURL: assetsWebURL, Output: output}, nil
 }
 
 type fileConfig struct {
-	APIURL string `yaml:"api-url"`
-	Output string `yaml:"output"`
+	APIURL       string `yaml:"api-url"`
+	AssetsWebURL string `yaml:"assets-web-url"`
+	Output       string `yaml:"output"`
 }
 
 func loadFile(homeDir func() (string, error)) (*fileConfig, error) {
@@ -84,6 +97,7 @@ func loadFile(homeDir func() (string, error)) (*fileConfig, error) {
 		return nil, fmt.Errorf("parsing config file %s: %w", path, err)
 	}
 	fc.APIURL = strings.TrimSpace(fc.APIURL)
+	fc.AssetsWebURL = strings.TrimSpace(fc.AssetsWebURL)
 	fc.Output = strings.TrimSpace(fc.Output)
 	return &fc, nil
 }

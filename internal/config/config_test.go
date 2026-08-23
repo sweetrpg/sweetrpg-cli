@@ -143,3 +143,74 @@ func TestLoadUnsetURLErrorIncludesFilePath(t *testing.T) {
 		t.Errorf("error %q should mention %q", err.Error(), want)
 	}
 }
+
+func TestAssetsWebURLResolution(t *testing.T) {
+	tests := []struct {
+		name      string
+		flag      string
+		env       string
+		fileBody  string
+		want      string
+		wantError string
+	}{
+		{
+			name:     "flag wins",
+			flag:     "https://a-flag.example.com",
+			env:      "https://a-env.example.com",
+			fileBody: "assets-web-url: https://a-file.example.com\napi-url: https://api.example.com\n",
+			want:     "https://a-flag.example.com",
+		},
+		{
+			name:     "env wins over file",
+			env:      "https://a-env.example.com",
+			fileBody: "assets-web-url: https://a-file.example.com\napi-url: https://api.example.com\n",
+			want:     "https://a-env.example.com",
+		},
+		{
+			name:     "file provides value",
+			fileBody: "assets-web-url:  https://a-file.example.com \napi-url: https://api.example.com\n",
+			want:     "https://a-file.example.com",
+		},
+		{
+			name:     "absent is allowed - only asset commands need it",
+			fileBody: fileWithBoth,
+			want:     "",
+		},
+		{
+			name:      "invalid value rejected when set",
+			env:       "not-a-url",
+			wantError: "invalid assets web base URL",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			home := writeFile(t, tt.fileBody)
+			getenv := func(key string) string {
+				if key == "SWEETRPG_ASSETS_WEB_URL" {
+					return tt.env
+				}
+				return ""
+			}
+
+			cfg, err := Load(Sources{
+				FlagAPIURL:       "https://api.example.com",
+				FlagAssetsWebURL: tt.flag,
+				Getenv:           getenv,
+				HomeDir:          home,
+			})
+
+			if tt.wantError != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.wantError) {
+					t.Fatalf("want error containing %q, got %v", tt.wantError, err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if cfg.AssetsWebURL != tt.want {
+				t.Errorf("AssetsWebURL = %q, want %q", cfg.AssetsWebURL, tt.want)
+			}
+		})
+	}
+}

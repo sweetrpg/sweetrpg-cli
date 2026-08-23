@@ -17,6 +17,105 @@ catalog entities (`volume`, `publisher`, `studio`, `person`, `system`, `license`
 go install github.com/sweetrpg/catalog-cli/cmd/sweetrpg-catalog@latest
 ```
 
+## Configuration
+
+The API endpoint resolves in this order:
+
+1. `--api-url` flag
+2. `SWEETRPG_CATALOG_API_URL` environment variable
+3. `~/.config/sweetrpg/catalog-cli.yaml`
+
+Example config file:
+
+```yaml
+api-url: https://catalog-api.dev.sweetrpg.com
+assets-web-url: https://assets-web.dev.sweetrpg.com
+```
+
+## Authentication
+
+Commands that write require a login. Auth settings are baked into release builds; for dev runs
+against plain `go run`, export them instead:
+
+```bash
+export SWEETRPG_AUTH_DOMAIN=dev-xxxx.us.auth0.com
+export SWEETRPG_AUTH_CLIENT_ID=...
+export SWEETRPG_AUTH_AUDIENCE=https://catalog-api
+```
+
+Run once per machine:
+
+```bash
+sweetrpg-catalog auth login
+```
+
+This opens the Auth0 device-flow login (visit the printed URL and enter the code). Tokens are
+stored in your OS keychain under service name `sweetrpg-catalog-cli`; access tokens refresh
+automatically. `auth logout` removes them. Auth failures exit with code 3.
+
+Reads don't require a login: `view` (and name resolution it performs) hits public endpoints and
+works with no stored session. Writes (`add`, `edit`, `delete`, `link`, `unlink`) require one.
+
+## Usage
+
+Entity commands share one shape; `<type>` is one of the entity types above:
+
+```bash
+sweetrpg-catalog add <type> <name> [property flags]
+sweetrpg-catalog edit <type> <name-or-id> [property flags]
+sweetrpg-catalog view <type> <name-or-id> [--json | --yaml]
+sweetrpg-catalog delete <type> <name-or-id>
+```
+
+Name arguments match case-insensitively and partially (exact matches win when both kinds
+hit); 24-hex IDs are used as-is. When a name matches several records an interactive picker
+lists each candidate's ID, or (with `--yes`) the command fails and prints the candidates.
+
+To see what a fuzzy query will hit before resolving, use `search`:
+
+```bash
+sweetrpg-catalog search <type> <query>    # prints "ID<TAB>name" per hit
+```
+
+Links connect two entities in either argument order:
+
+```bash
+sweetrpg-catalog link volume "Dungeon World" publisher "Evil Hat Productions"
+sweetrpg-catalog link person "John Wick" volume 507f1f77bcf86cd799439011 --role artist
+sweetrpg-catalog unlink volume "Dungeon World" person "John Wick"
+```
+
+Linkable pairs: volume-publisher, volume-studio, volume-system, volume-person. Person links to
+volumes create or update contribution credits (`--role`, default `author`). Relinking an
+existing pair is idempotent.
+
+Volumes also support staged-asset upload for covers:
+
+```bash
+sweetrpg-catalog edit volume "Dungeon World" --cover ./dw-cover.png
+```
+
+`--cover` accepts png, jpeg, or webp files and can be combined with property
+flags. Uploads require a session and an `assets-web-url` (flag, env, or config
+file); they talk to assets-web directly, so a `--curl` run previews the
+linking PATCH but not the upload itself.
+
+## Scripting
+
+- Pass `--yes` to skip all interactive prompts; ambiguous name resolutions then fail instead of prompting. Deletes additionally require `--force` when stdin is not a TTY - `--yes` alone never deletes in a script.
+- Use `view <type> <id> --json` for machine-readable output.
+- Pass `--curl` to print the equivalent cURL command(s) instead of calling the API. Nothing is sent; the bearer token is printed as `<redacted>`. Flows that need server data to continue (name resolution feeding later requests) stop after their first request, so pass IDs instead of names to see write requests directly.
+- Exit codes: `0` success, `1` general error, `2` usage error, `3` authentication failure.
+
+## Shell Completion
+
+```bash
+source <(sweetrpg-catalog completion bash)   # add to .bashrc
+source <(sweetrpg-catalog completion zsh)    # add to .zshrc
+sweetrpg-catalog completion fish | source
+sweetrpg-catalog completion powershell
+```
+
 ## Documentation
 
 See [RELEASE.md](RELEASE.md) for how versions get cut and
