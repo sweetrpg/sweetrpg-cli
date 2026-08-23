@@ -29,6 +29,11 @@ var flagCurl bool
 type curlTransport struct{}
 
 func (curlTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	// The flow dies here, so silencing cobra's error/usage printing is safe:
+	// only the rendered command should reach the terminal. Errors that happen
+	// before any request (config, auth) still print normally.
+	rootCmd.SilenceErrors = true
+	rootCmd.SilenceUsage = true
 	fmt.Fprintln(curlOut, renderCurl(req))
 	return nil, errCurlEmitted
 }

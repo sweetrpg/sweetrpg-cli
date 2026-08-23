@@ -5,7 +5,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
+	"os"
 	"strings"
 	"testing"
 
@@ -148,11 +150,27 @@ func TestExecuteSwallowsCurlSentinel(t *testing.T) {
 	rootCmd.SetArgs([]string{"--api-url", "http://127.0.0.1:9", "--yes", "--curl", "view", "publisher", "507f1f77bcf86cd799439011"})
 	t.Cleanup(func() { rootCmd.SetArgs(nil); rootCmd.PersistentFlags().Set("curl", "false") })
 
+	// Nothing may reach stderr: no "Error:" line, no usage dump.
+	oldErr := os.Stderr
+	r, w, _ := os.Pipe()
+	os.Stderr = w
+	errOut := make(chan string, 1)
+	go func() {
+		var buf bytes.Buffer
+		_, _ = io.Copy(&buf, r)
+		errOut <- buf.String()
+	}()
+	defer func() { os.Stderr = oldErr }()
+
 	out := runCaptured(t, func() {
 		if err := Execute(); err != nil {
 			t.Errorf("--curl run must exit cleanly, got %v", err)
 		}
 	})
+	w.Close()
+	if got := <-errOut; strings.Contains(got, "Error:") || strings.Contains(got, "Usage:") || got != "" {
+		t.Errorf("stderr must stay quiet during --curl runs, got:\n%s", got)
+	}
 	if !strings.Contains(out, "'http://127.0.0.1:9/publishers/507f1f77bcf86cd799439011'") {
 		t.Errorf("unexpected output:\n%s", out)
 	}
