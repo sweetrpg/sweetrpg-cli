@@ -24,6 +24,8 @@ func buildTree() {
 		rootCmd.AddCommand(newEditCommand())
 		rootCmd.AddCommand(newViewCommand())
 		rootCmd.AddCommand(newDeleteCommand())
+		rootCmd.AddCommand(newLinkCommand())
+		rootCmd.AddCommand(newUnlinkCommand())
 	})
 }
 
