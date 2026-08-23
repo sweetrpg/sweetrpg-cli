@@ -187,7 +187,7 @@ func TestViewEmitsRecordJSON(t *testing.T) {
 		ID   string `json:"id"`
 		Name string `json:"name"`
 	}
-	if err := json.Unmarshal([]byte(out.String()), &record); err != nil {
+	if err := json.Unmarshal(out.Bytes(), &record); err != nil {
 		t.Fatalf("view output is not JSON: %v\n%s", err, out.String())
 	}
 	if record.ID != "507f1f77bcf86cd799439011" || record.Name != "Evil Hat Productions" {

@@ -126,9 +126,8 @@ func TestResolveRefPickerDeclineErrors(t *testing.T) {
 func TestConfirmDeleteForceSkipsPrompt(t *testing.T) {
 	resetResolveState(t)
 	cmd := newDeleteCommand()
-	if err := cmd.PersistentFlags().Set("force", "true"); err == nil {
-		// --force is a child flag; fall through to direct var
-	}
+	// --force is a child flag; setting it here does not reach the package var,
+	// so set the var directly.
 	flagForce = true
 	defer func() { flagForce = false }()
 	err := confirmDelete(cmd, "studio", "abc")

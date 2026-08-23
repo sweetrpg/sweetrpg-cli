@@ -72,7 +72,7 @@ func TestPeekBodyPrettyPrintsAndPreserves(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer again.Close()
+	defer func() { _ = again.Close() }()
 	buf := new(bytes.Buffer)
 	if _, err := buf.ReadFrom(again); err != nil || !bytes.Equal(buf.Bytes(), raw) {
 		t.Errorf("body not preserved for replay: %q, %v", buf.Bytes(), err)
@@ -148,7 +148,7 @@ func TestExecuteSwallowsCurlSentinel(t *testing.T) {
 	t.Cleanup(func() { auth.Domain, auth.ClientID, auth.Audience = oldDomain, oldClientID, oldAudience })
 	resetResolveState(t)
 	rootCmd.SetArgs([]string{"--api-url", "http://127.0.0.1:9", "--yes", "--curl", "view", "publisher", "507f1f77bcf86cd799439011"})
-	t.Cleanup(func() { rootCmd.SetArgs(nil); rootCmd.PersistentFlags().Set("curl", "false") })
+	t.Cleanup(func() { rootCmd.SetArgs(nil); _ = rootCmd.PersistentFlags().Set("curl", "false") })
 
 	// Nothing may reach stderr: no "Error:" line, no usage dump.
 	oldErr := os.Stderr
@@ -167,7 +167,7 @@ func TestExecuteSwallowsCurlSentinel(t *testing.T) {
 			t.Errorf("--curl run must exit cleanly, got %v", err)
 		}
 	})
-	w.Close()
+	_ = w.Close()
 	if got := <-errOut; strings.Contains(got, "Error:") || strings.Contains(got, "Usage:") || got != "" {
 		t.Errorf("stderr must stay quiet during --curl runs, got:\n%s", got)
 	}

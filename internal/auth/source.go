@@ -138,7 +138,7 @@ func Logout(ctx context.Context, hc *http.Client, cfg *Config, st Store) (bool, 
 		return true, err
 	}
 	if revokeErr := RevokeRefreshToken(ctx, hc, cfg, sess.RefreshToken); revokeErr != nil {
-		fmt.Fprintf(stderrWriter, "warning: server-side revocation failed (%v); removing local credentials anyway\n", revokeErr)
+		_, _ = fmt.Fprintf(stderrWriter, "warning: server-side revocation failed (%v); removing local credentials anyway\n", revokeErr)
 	}
 	return true, st.Delete()
 }

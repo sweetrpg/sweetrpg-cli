@@ -208,8 +208,6 @@ func TestUnlinkAbsentPairExitsZero(t *testing.T) {
 
 const (
 	contributionListJSON = `{"data":[{"type":"contribution","id":"cccccccccccccccccccccccc","attributes":{"roles":["author"]},"relationships":{"person":{"data":{"type":"person","id":"` + linkPersonID + `"}},"volume":{"data":{"type":"volume","id":"` + linkVolumeID + `"}}}}]}`
-
-	contributionArtistJSON = `{"data":[{"type":"contribution","id":"222222222222222222222222","attributes":{"roles":["artist"]},"relationships":{"person":{"data":{"type":"person","id":"` + linkPersonID + `"}},"volume":{"data":{"type":"volume","id":"` + linkVolumeID + `"}}}}]}`
 )
 
 func emptyContributionsJSON() string { return `{"data":[]}` }

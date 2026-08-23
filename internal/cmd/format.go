@@ -72,7 +72,7 @@ func humanRecord(rec any) string {
 }
 
 func writeStruct(b *strings.Builder, v reflect.Value, indent int) {
-	for v.Kind() == reflect.Ptr {
+	for v.Kind() == reflect.Pointer {
 		if v.IsNil() {
 			return
 		}
@@ -101,26 +101,28 @@ func writeStruct(b *strings.Builder, v reflect.Value, indent int) {
 			continue
 		}
 		if fv.Kind() == reflect.Slice && fieldIsStructSlice(fv) {
-			b.WriteString(fmt.Sprintf("%s%s:\n", pad, key))
+			fmt.Fprintf(b, "%s%s:\n", pad, key)
 			for j := 0; j < fv.Len(); j++ {
 				writeStruct(b, fv.Index(j), indent+1)
 			}
 			continue
 		}
-		b.WriteString(fmt.Sprintf("%s%-14s %s\n", pad, key+":", displayValue(fv)))
+		fmt.Fprintf(b, "%s%-14s %s\n", pad, key+":", displayValue(fv))
 	}
 }
 
 func fieldIsStructSlice(v reflect.Value) bool {
-	if v.Type().Elem().Kind() != reflect.Struct &&
-		!(v.Type().Elem().Kind() == reflect.Ptr && v.Type().Elem().Elem().Kind() == reflect.Struct) {
+	elem := v.Type().Elem()
+	isValueStruct := elem.Kind() == reflect.Struct
+	isPointerToStruct := elem.Kind() == reflect.Pointer && elem.Elem().Kind() == reflect.Struct
+	if !isValueStruct && !isPointerToStruct {
 		return false
 	}
 	return v.Len() > 0
 }
 
 func displayValue(v reflect.Value) string {
-	for v.Kind() == reflect.Ptr || v.Kind() == reflect.Interface {
+	for v.Kind() == reflect.Pointer || v.Kind() == reflect.Interface {
 		v = v.Elem()
 	}
 	switch v.Kind() {
@@ -170,7 +172,7 @@ func shortStruct(v reflect.Value) (string, bool) {
 
 func isEmptyValue(v reflect.Value) bool {
 	switch v.Kind() {
-	case reflect.Ptr, reflect.Interface:
+	case reflect.Pointer, reflect.Interface:
 		return v.IsNil()
 	case reflect.Slice, reflect.Map:
 		return v.Len() == 0

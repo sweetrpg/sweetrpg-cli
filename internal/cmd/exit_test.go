@@ -98,7 +98,7 @@ func TestViewFormatConflictIsUsageExit2(t *testing.T) {
 			t.Fatalf("missing %s flag", name)
 		}
 		if on {
-			fl.Value.Set("true")
+			_ = fl.Value.Set("true")
 			fl.Changed = true
 		} else {
 			fl.Changed = false

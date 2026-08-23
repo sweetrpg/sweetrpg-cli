@@ -34,7 +34,7 @@ func (curlTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	// before any request (config, auth) still print normally.
 	rootCmd.SilenceErrors = true
 	rootCmd.SilenceUsage = true
-	fmt.Fprintln(curlOut, renderCurl(req))
+	_, _ = fmt.Fprintln(curlOut, renderCurl(req))
 	return nil, errCurlEmitted
 }
 
@@ -95,7 +95,7 @@ func peekBody(req *http.Request) []byte {
 		if err != nil {
 			return nil
 		}
-		defer br.Close()
+		defer func() { _ = br.Close() }()
 		raw, _ = io.ReadAll(br)
 	} else {
 		raw, _ = io.ReadAll(req.Body)

@@ -8,7 +8,6 @@ import (
 
 	"github.com/spf13/pflag"
 	"github.com/sweetrpg/catalog-cli/internal/client"
-	modelcore "github.com/sweetrpg/model-core.go/vo"
 )
 
 // Relation names one modeled connection to another entity type. WireName is
@@ -213,7 +212,7 @@ func applyFlags[T any](defs []FlagDef[T], v *T, values map[string][]string) (map
 // with an ID field by JSON:API convention.
 func voID(v any) string {
 	rv := reflect.ValueOf(v)
-	for rv.Kind() == reflect.Ptr {
+	for rv.Kind() == reflect.Pointer {
 		rv = rv.Elem()
 	}
 	if rv.Kind() != reflect.Struct {
@@ -278,7 +277,7 @@ func pickMatches[T any](records []*T, attr string, label func(*T) string, query 
 // string; non-string attributes yield "" so callers can fall back to labels.
 func voString(v any, attr string) string {
 	rv := reflect.ValueOf(v)
-	for rv.Kind() == reflect.Ptr {
+	for rv.Kind() == reflect.Pointer {
 		rv = rv.Elem()
 	}
 	if rv.Kind() != reflect.Struct {
@@ -312,24 +311,6 @@ func splitKV(spec string) (string, string) {
 		return k, v
 	}
 	return spec, ""
-}
-
-func setTags(vals []string) (any, error) {
-	out := make([]modelcore.TagVO, 0, len(vals))
-	for _, spec := range vals {
-		name, value := splitKV(spec)
-		out = append(out, modelcore.TagVO{Name: name, Value: value})
-	}
-	return out, nil
-}
-
-func setProperties(vals []string) (any, error) {
-	out := make([]modelcore.PropertyVO, 0, len(vals))
-	for _, spec := range vals {
-		name, value := splitKV(spec)
-		out = append(out, modelcore.PropertyVO{Name: name, Kind: "string", Value: value})
-	}
-	return out, nil
 }
 
 func init() {

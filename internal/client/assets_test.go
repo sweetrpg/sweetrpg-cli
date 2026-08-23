@@ -54,7 +54,7 @@ func newAssetFixture(t *testing.T) (*assetFixture, *AssetsClient) {
 				http.Error(w, "unreadable", http.StatusBadRequest)
 				return
 			}
-			defer file.Close()
+			defer func() { _ = file.Close() }()
 			f.partName = "file"
 			f.partFile = header.Filename
 			f.partCT = header.Header.Get("Content-Type")

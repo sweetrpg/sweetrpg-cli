@@ -33,7 +33,7 @@ Exact matches are preferred; otherwise every record containing the query is list
 			}
 			out := cmd.OutOrStdout()
 			if len(candidates) == 0 {
-				fmt.Fprintf(out, "no %s matches for %q\n", ops.spec.Name, args[1])
+				_, _ = fmt.Fprintf(out, "no %s matches for %q\n", ops.spec.Name, args[1])
 				return nil
 			}
 			for _, cand := range candidates {
@@ -41,9 +41,9 @@ Exact matches are preferred; otherwise every record containing the query is list
 				if cand.Detail != "" {
 					detail = " " + cand.Detail
 				}
-				fmt.Fprintf(out, "%s\t%s%s\n", cand.ID, cand.Label, detail)
+				_, _ = fmt.Fprintf(out, "%s\t%s%s\n", cand.ID, cand.Label, detail)
 			}
-			fmt.Fprintf(out, "\n%d %s match(es)\n", len(candidates), ops.spec.Name)
+			_, _ = fmt.Fprintf(out, "\n%d %s match(es)\n", len(candidates), ops.spec.Name)
 			return nil
 		},
 	}

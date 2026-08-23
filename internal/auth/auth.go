@@ -141,12 +141,6 @@ var (
 	ErrPending = errors.New("authorization pending")
 )
 
-// tokenError is an /oauth/token error payload.
-type tokenError struct {
-	Error       string `json:"error"`
-	Description string `json:"error_description"`
-}
-
 // requestDeviceCode starts the device grant against cfg's tenant.
 func requestDeviceCode(ctx context.Context, hc *http.Client, cfg *Config) (*DeviceCode, error) {
 	if err := cfg.validate(); err != nil {
