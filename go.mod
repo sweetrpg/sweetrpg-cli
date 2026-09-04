@@ -7,7 +7,7 @@ require (
 	github.com/manifoldco/promptui v0.9.0
 	github.com/pilgrimagesoftware/dtrpg-sdk.go v0.1.0
 	github.com/spf13/cobra v1.10.2
-	github.com/spf13/pflag v1.0.9
+	github.com/spf13/pflag v1.0.10
 	github.com/sweetrpg/catalog-objects.go v0.4.3
 	github.com/sweetrpg/model-core.go v0.0.173
 	github.com/zalando/go-keyring v0.2.8
