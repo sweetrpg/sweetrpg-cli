@@ -163,6 +163,12 @@ func TestTokenFuncDowngradesNotLoggedInOnlyWhenOptional(t *testing.T) {
 }
 
 func TestViewBuildsWithoutBakedInAuthConfig(t *testing.T) {
+	// resolveAuthConfig reads the real config file via os.UserHomeDir;
+	// sandbox HOME so a developer's actual ~/.config/sweetrpg/cli.yaml
+	// (which may well set authTenant) can't mask the "unset" case under
+	// test.
+	t.Setenv("HOME", t.TempDir())
+
 	oldDomain, oldClientID, oldAudience := auth.Domain, auth.ClientID, auth.Audience
 	auth.Domain, auth.ClientID, auth.Audience = "", "", ""
 	t.Cleanup(func() { auth.Domain, auth.ClientID, auth.Audience = oldDomain, oldClientID, oldAudience })

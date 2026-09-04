@@ -24,8 +24,14 @@ const FileName = "cli.yaml"
 type Config struct {
 	AssetsWebURL string
 	Output       string
-	// Services holds each configured service's base URL from the config
-	// file, keyed by its camelCase service name (e.g. "gameRoom").
+	// BaseURL is the config file's baseURL - every service.<service> entry
+	// in the config file is a path resolved against it (e.g. baseURL
+	// "https://dev.sweetrpg.com" + services.catalog "/api/0/catalog").
+	BaseURL string
+	// Services holds each configured service's path override from the
+	// config file, keyed by its camelCase service name (e.g. "gameRoom"),
+	// resolved against BaseURL. An env var or flag override is always a
+	// full URL instead - see ServiceURL.
 	Services map[string]string
 	// FilePath is the resolved config file path, or "" when no home
 	// directory is available.
@@ -55,49 +61,80 @@ func Load(s Sources) (*Config, error) {
 		return nil, err
 	}
 
-	// Optional: only asset commands need it, so absence is fine and validated
-	// only when something is set.
-	assetsWebURL := firstNonEmpty(s.FlagAssetsWebURL, s.Getenv("SWEETRPG_ASSETS_WEB_URL"), file.AssetsWebURL)
-	if assetsWebURL != "" {
-		if err := validateURL("assets web", assetsWebURL); err != nil {
-			return nil, err
-		}
-	}
-
-	output := file.Output
-	if output == "" {
-		output = DefaultOutputFormat
-	}
-	return &Config{
-		AssetsWebURL: assetsWebURL,
-		Output:       output,
+	cfg := &Config{
+		Output:       file.Output,
+		BaseURL:      file.BaseURL,
 		Services:     file.Services,
 		FilePath:     filePath(s.HomeDir),
 		AuthDomain:   file.AuthTenant.Domain,
 		AuthClientID: file.AuthTenant.ClientID,
 		AuthAudience: file.AuthTenant.Audience,
-	}, nil
+	}
+	if cfg.Output == "" {
+		cfg.Output = DefaultOutputFormat
+	}
+
+	// Optional: only asset commands need it, so absence is fine and validated
+	// only when something is set. "assets-web" isn't itself a platform API,
+	// but resolves the same way (env/flag full URL, or a services.assetsWeb
+	// path against baseURL) since it's a network base URL like the rest.
+	assetsWebURL, err := cfg.serviceURL(s.Getenv, s.FlagAssetsWebURL, "assets-web", "SWEETRPG_ASSETS_WEB_URL")
+	if err != nil && !errors.Is(err, errServiceUnconfigured) {
+		return nil, err
+	}
+	cfg.AssetsWebURL = assetsWebURL
+
+	return cfg, nil
 }
+
+// errServiceUnconfigured marks "nothing set this service" so Load can treat
+// an absent (optional) assets-web URL as fine while still surfacing a real
+// validation error (e.g. a malformed URL) to the caller.
+var errServiceUnconfigured = errors.New("service not configured")
 
 // ServiceURL resolves a named service's base URL by precedence: flagOverride
 // (a command's own --api-url flag, if it has one) > the service's
-// SWEETRPG_<SERVICE>_API_URL environment variable > the config file's
-// services.<service> entry. service is given in kebab-case (e.g.
+// SWEETRPG_<SERVICE>_API_URL environment variable, both taken as a full URL
+// > the config file's services.<service> entry, taken as a path and
+// resolved against BaseURL. service is given in kebab-case (e.g.
 // "game-room"); the config file key is its camelCase form ("gameRoom").
 // SWEETRPG_CATALOG_API_URL is preserved as the env var name for "catalog".
 func (c *Config) ServiceURL(getenv func(string) string, flagOverride, service string) (string, error) {
-	key := serviceConfigKey(service)
-	apiURL := firstNonEmpty(flagOverride, getenv(serviceEnvVar(service)), c.Services[key])
-	if apiURL == "" {
+	apiURL, err := c.serviceURL(getenv, flagOverride, service, serviceEnvVar(service))
+	if errors.Is(err, errServiceUnconfigured) {
 		return "", fmt.Errorf(
-			"no %s API base URL configured: pass --api-url, export %s, or set services.%s in %s",
-			service, serviceEnvVar(service), key, c.FilePath,
+			"no %s API base URL configured: pass --api-url, export %s, or set baseURL and services.%s in %s",
+			service, serviceEnvVar(service), serviceConfigKey(service), c.FilePath,
 		)
 	}
-	if err := validateURL(service, apiURL); err != nil {
+	return apiURL, err
+}
+
+// serviceURL is the shared resolver behind ServiceURL and Load's assets-web
+// handling: flagOverride/env are taken as full URLs, the config file entry
+// as a path joined onto BaseURL. Returns errServiceUnconfigured (wrapped)
+// when nothing at all is set, so callers can distinguish "unconfigured"
+// from "configured but invalid".
+func (c *Config) serviceURL(getenv func(string) string, flagOverride, service, envVar string) (string, error) {
+	if full := firstNonEmpty(flagOverride, getenv(envVar)); full != "" {
+		if err := validateURL(service, full); err != nil {
+			return "", err
+		}
+		return full, nil
+	}
+
+	path := c.Services[serviceConfigKey(service)]
+	if path == "" {
+		return "", errServiceUnconfigured
+	}
+	if c.BaseURL == "" {
+		return "", fmt.Errorf("services.%s is set but no baseURL is configured in %s", serviceConfigKey(service), c.FilePath)
+	}
+	full := strings.TrimRight(c.BaseURL, "/") + "/" + strings.TrimLeft(path, "/")
+	if err := validateURL(service, full); err != nil {
 		return "", err
 	}
-	return apiURL, nil
+	return full, nil
 }
 
 // serviceConfigKey converts a kebab-case service name to its camelCase
@@ -128,10 +165,13 @@ func validateURL(label, raw string) error {
 }
 
 type fileConfig struct {
-	Services     map[string]string `yaml:"services"`
-	AssetsWebURL string            `yaml:"assets-web-url"`
-	Output       string            `yaml:"output"`
-	AuthTenant   authTenantFile    `yaml:"authTenant"`
+	// BaseURL is the host every services.<service> path resolves against.
+	BaseURL string `yaml:"baseURL"`
+	// Services holds each service's path override, including "assetsWeb" -
+	// not itself a platform API, but a path under baseURL like the rest.
+	Services   map[string]string `yaml:"services"`
+	Output     string            `yaml:"output"`
+	AuthTenant authTenantFile    `yaml:"authTenant"`
 }
 
 // authTenantFile lets an operator repoint the Auth0 tenant without a
@@ -159,7 +199,7 @@ func loadFile(homeDir func() (string, error)) (*fileConfig, error) {
 	if err := yaml.Unmarshal(data, &fc); err != nil {
 		return nil, fmt.Errorf("parsing config file %s: %w", path, err)
 	}
-	fc.AssetsWebURL = strings.TrimSpace(fc.AssetsWebURL)
+	fc.BaseURL = strings.TrimSpace(fc.BaseURL)
 	fc.Output = strings.TrimSpace(fc.Output)
 	for k, v := range fc.Services {
 		fc.Services[k] = strings.TrimSpace(v)

@@ -25,7 +25,7 @@ func writeFile(t *testing.T, content string) func() (string, error) {
 	return func() (string, error) { return dir, nil }
 }
 
-const fileWithBoth = "services:\n  catalog: https://file.example.com\noutput: json\n"
+const fileWithBoth = "baseURL: https://file.example.com\nservices:\n  catalog: /api/0/catalog\noutput: json\n"
 
 func TestLoadParsesAuthTenant(t *testing.T) {
 	fileBody := "authTenant:\n  domain: file.us.auth0.com\n  clientId: file-cid\n  audience: https://file-aud\n"
@@ -75,9 +75,9 @@ func TestServiceURLPrecedence(t *testing.T) {
 			wantURL:  "https://env.example.com",
 		},
 		{
-			name:     "file provides URL",
+			name:     "file provides URL by joining baseURL and the service path",
 			fileBody: fileWithBoth,
-			wantURL:  "https://file.example.com",
+			wantURL:  "https://file.example.com/api/0/catalog",
 		},
 		{
 			name:    "missing file is not an error when env set",
@@ -86,13 +86,18 @@ func TestServiceURLPrecedence(t *testing.T) {
 		},
 		{
 			name:      "nothing set names all three sources",
-			wantError: "--api-url, export SWEETRPG_CATALOG_API_URL, or set services.catalog",
+			wantError: "--api-url, export SWEETRPG_CATALOG_API_URL, or set baseURL and services.catalog",
 		},
 		{
 			name:      "blank values treated as unset",
 			flag:      "   ",
 			fileBody:  "services:\n  catalog: \"\"\n",
 			wantError: "no catalog API base URL configured",
+		},
+		{
+			name:      "service path set without baseURL is an error",
+			fileBody:  "services:\n  catalog: /api/0/catalog\n",
+			wantError: "services.catalog is set but no baseURL is configured",
 		},
 		{
 			name:      "invalid yaml is reported with path context",
@@ -186,24 +191,24 @@ func TestServiceURLUnsetErrorIncludesFilePath(t *testing.T) {
 }
 
 func TestServiceURLForNonCatalogService(t *testing.T) {
-	fileBody := "services:\n  gameRoom: https://gr.file.example.com\n"
+	fileBody := "baseURL: https://gr.file.example.com\nservices:\n  gameRoom: /api/0/game-room\n"
 	home := writeFile(t, fileBody)
 	cfg, err := Load(Sources{Getenv: func(string) string { return "" }, HomeDir: home})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	t.Run("resolves from file by camelCase key", func(t *testing.T) {
+	t.Run("resolves from file by camelCase key joined to baseURL", func(t *testing.T) {
 		gotURL, err := cfg.ServiceURL(func(string) string { return "" }, "", "game-room")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		if gotURL != "https://gr.file.example.com" {
-			t.Errorf("ServiceURL = %q, want https://gr.file.example.com", gotURL)
+		if gotURL != "https://gr.file.example.com/api/0/game-room" {
+			t.Errorf("ServiceURL = %q, want https://gr.file.example.com/api/0/game-room", gotURL)
 		}
 	})
 
-	t.Run("resolves from SWEETRPG_GAME_ROOM_API_URL env var", func(t *testing.T) {
+	t.Run("resolves from SWEETRPG_GAME_ROOM_API_URL env var as a full URL, ignoring baseURL", func(t *testing.T) {
 		getenv := func(key string) string {
 			if key == "SWEETRPG_GAME_ROOM_API_URL" {
 				return "https://gr.env.example.com"
@@ -243,19 +248,19 @@ func TestAssetsWebURLResolution(t *testing.T) {
 			name:     "flag wins",
 			flag:     "https://a-flag.example.com",
 			env:      "https://a-env.example.com",
-			fileBody: "assets-web-url: https://a-file.example.com\nservices:\n  catalog: https://api.example.com\n",
+			fileBody: "baseURL: https://api.example.com\nservices:\n  assetsWeb: /assets\n",
 			want:     "https://a-flag.example.com",
 		},
 		{
 			name:     "env wins over file",
 			env:      "https://a-env.example.com",
-			fileBody: "assets-web-url: https://a-file.example.com\nservices:\n  catalog: https://api.example.com\n",
+			fileBody: "baseURL: https://api.example.com\nservices:\n  assetsWeb: /assets\n",
 			want:     "https://a-env.example.com",
 		},
 		{
-			name:     "file provides value",
-			fileBody: "assets-web-url:  https://a-file.example.com \nservices:\n  catalog: https://api.example.com\n",
-			want:     "https://a-file.example.com",
+			name:     "file provides value by joining baseURL and the service path",
+			fileBody: "baseURL: https://api.example.com\nservices:\n  assetsWeb:  /assets \n",
+			want:     "https://api.example.com/assets",
 		},
 		{
 			name:     "absent is allowed - only asset commands need it",
@@ -265,7 +270,7 @@ func TestAssetsWebURLResolution(t *testing.T) {
 		{
 			name:      "invalid value rejected when set",
 			env:       "not-a-url",
-			wantError: "invalid assets web base URL",
+			wantError: "invalid assets-web base URL",
 		},
 	}
 	for _, tt := range tests {

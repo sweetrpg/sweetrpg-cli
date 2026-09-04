@@ -22,19 +22,26 @@ go install github.com/sweetrpg/sweetrpg-cli/cmd/sweetrpg@latest
 
 Each service's base URL resolves in this order:
 
-1. `--api-url` flag (catalog only today)
+1. `--api-url` flag (catalog only today) - a full URL
 2. `SWEETRPG_<SERVICE>_API_URL` environment variable (e.g. `SWEETRPG_CATALOG_API_URL`,
-   `SWEETRPG_GAME_ROOM_API_URL`)
-3. `~/.config/sweetrpg/cli.yaml`'s `services.<service>` entry
+   `SWEETRPG_GAME_ROOM_API_URL`) - also a full URL
+3. `~/.config/sweetrpg/cli.yaml`'s `baseURL` plus a `services.<service>` path
 
-Example config file:
+Example config file. Every service's base URL is `baseURL` joined with its own path under
+`services` - including `assetsWeb`, which isn't itself a platform API but is a network path like
+the rest:
 
 ```yaml
+baseURL: https://dev.sweetrpg.com
 services:
-  catalog: https://catalog-api.dev.sweetrpg.com
-  gameRoom: https://game-room-api.dev.sweetrpg.com
-assets-web-url: https://assets-web.dev.sweetrpg.com
+  catalog: /api/0/catalog
+  gameRoom: /api/0/game-room
+  assetsWeb: /assets
 ```
+
+A service that lives on a different host entirely (a local port during dev, say) skips `baseURL`
+for that one service via its env var, which always takes a full URL and overrides the config
+file's path-under-`baseURL` resolution.
 
 ## Authentication
 
@@ -118,9 +125,9 @@ sweetrpg catalog edit volume "Dungeon World" --cover ./dw-cover.png
 ```
 
 `--cover` accepts png, jpeg, or webp files and can be combined with property
-flags. Uploads require a session and an `assets-web-url` (flag, env, or config
-file); they talk to assets-web directly, so a `--curl` run previews the
-linking PATCH but not the upload itself.
+flags. Uploads require a session and an assets-web base URL (`--assets-web-url` flag,
+`SWEETRPG_ASSETS_WEB_URL` env var, or `services.assetsWeb` in the config file); they talk to
+assets-web directly, so a `--curl` run previews the linking PATCH but not the upload itself.
 
 ## Importing a DriveThruRPG library into the catalog
 
