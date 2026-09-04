@@ -17,13 +17,13 @@ const (
 
 // Volume property names carrying DriveThruRPG provenance. dtrpg_product_id is
 // also the idempotency key: a second import skips any product whose ID already
-// appears here on an existing volume.
+// appears here on an existing volume. Purchase date, order id, and cover URL
+// are deliberately not recorded - they are personal-order facts (or, for the
+// cover, an off-site reference) that don't belong in the shared catalog; the
+// cover image itself is fetched and stored as a volume asset instead.
 const (
-	PropProductID      = "dtrpg_product_id"
-	PropOrderProductID = "dtrpg_order_product_id"
-	PropPurchaseDate   = "dtrpg_purchase_date"
-	PropCoverURL       = "dtrpg_cover_url"
-	PropISBN           = "dtrpg_isbn"
+	PropProductID = "dtrpg_product_id"
+	PropISBN      = "dtrpg_isbn"
 )
 
 // imageBaseURL is the prefix for the relative cover-image paths the DTRPG API

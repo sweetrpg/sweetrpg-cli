@@ -57,11 +57,17 @@ func TestMapProductsEmbeddedMetadata(t *testing.T) {
 	if len(p.Volume.Tags) != 2 || p.Volume.Tags[0].Name != "Fantasy" || p.Volume.Tags[1].Name != "Powered by the Apocalypse" {
 		t.Errorf("tags = %+v, want deduped [Fantasy, Powered by the Apocalypse]", p.Volume.Tags)
 	}
+	if p.CoverURL != imageBaseURL+"products/covers/dw.jpg" {
+		t.Errorf("cover url = %q", p.CoverURL)
+	}
 	props := propMap(p.Volume.Properties)
-	if props[PropProductID] != "42" || props[PropOrderProductID] != "900" ||
-		props[PropPurchaseDate] != "2021-04-05" || props[PropISBN] != "978-1-000-00000-0" ||
-		props[PropCoverURL] != imageBaseURL+"products/covers/dw.jpg" {
+	if props[PropProductID] != "42" || props[PropISBN] != "978-1-000-00000-0" {
 		t.Errorf("properties = %+v", props)
+	}
+	for _, gone := range []string{"dtrpg_order_product_id", "dtrpg_purchase_date", "dtrpg_cover_url"} {
+		if _, ok := props[gone]; ok {
+			t.Errorf("property %q should not be recorded", gone)
+		}
 	}
 }
 
@@ -104,8 +110,8 @@ func TestMapProductsResolvesSideloadedPublisherAndProduct(t *testing.T) {
 	if p.Volume.Description != "Fate Core System." {
 		t.Errorf("description = %q", p.Volume.Description)
 	}
-	if got := propMap(p.Volume.Properties)[PropCoverURL]; got != "https://cdn.example/cover.png" {
-		t.Errorf("cover url = %q, want absolute passthrough", got)
+	if p.CoverURL != "https://cdn.example/cover.png" {
+		t.Errorf("cover url = %q, want absolute passthrough", p.CoverURL)
 	}
 }
 
@@ -118,8 +124,8 @@ func TestMapProductsOmitsBlankProperties(t *testing.T) {
 	if _, ok := props[PropISBN]; ok {
 		t.Error("blank ISBN should be omitted")
 	}
-	if _, ok := props[PropCoverURL]; ok {
-		t.Error("missing cover should be omitted")
+	if p.CoverURL != "" {
+		t.Errorf("missing cover should yield empty CoverURL, got %q", p.CoverURL)
 	}
 	if props[PropProductID] != "1" {
 		t.Errorf("product id property = %q", props[PropProductID])

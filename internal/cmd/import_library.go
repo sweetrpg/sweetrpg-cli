@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -19,6 +20,11 @@ var (
 
 	// requirePlatformSession is a seam so tests skip the keychain check.
 	requirePlatformSession = defaultRequirePlatformSession
+
+	// fetchCover is a seam so tests point cover downloads at a fixture server.
+	fetchCover = func(ctx context.Context, url string) (*dtrpg.Cover, error) {
+		return dtrpg.FetchCover(ctx, http.DefaultClient, url)
+	}
 )
 
 // scanPageSize bounds each catalog-api list page during the dedup and
@@ -133,16 +139,24 @@ func planImport(products []dtrpg.Product, known map[string]bool, includeArchived
 }
 
 type importSummary struct {
-	imported int
-	failed   int
-	failures []string
+	imported       int
+	failed         int
+	failures       []string
+	coversAttached int
+	coversSkipped  int
 }
 
 func executeImport(ctx context.Context, cmd *cobra.Command, c *client.Client, products []dtrpg.Product) importSummary {
 	resolver := newPublisherResolver(c)
+	assets, assetsErr := buildAssetsClient()
+	if assetsErr != nil {
+		cmd.Printf("  covers disabled: %v\n", assetsErr)
+	}
+
 	var s importSummary
 	for _, prod := range products {
-		if err := importOne(ctx, c, resolver, prod); err != nil {
+		volumeID, err := importOne(ctx, c, resolver, prod)
+		if err != nil {
 			s.failed++
 			s.failures = append(s.failures, fmt.Sprintf("%s: %v", prod.Title, err))
 			cmd.Printf("  failed   %s (%v)\n", prod.Title, err)
@@ -150,18 +164,28 @@ func executeImport(ctx context.Context, cmd *cobra.Command, c *client.Client, pr
 		}
 		s.imported++
 		cmd.Printf("  imported %s\n", prod.Title)
+
+		if assetsErr != nil {
+			s.coversSkipped++
+			continue
+		}
+		if attachCover(ctx, cmd, c, assets, volumeID, prod) {
+			s.coversAttached++
+		} else {
+			s.coversSkipped++
+		}
 	}
 	return s
 }
 
 // importOne creates the volume and, when the product names a publisher, links
-// the resolved publisher record to it.
-func importOne(ctx context.Context, c *client.Client, resolver *publisherResolver, prod dtrpg.Product) error {
+// the resolved publisher record to it. Returns the created volume's ID.
+func importOne(ctx context.Context, c *client.Client, resolver *publisherResolver, prod dtrpg.Product) (string, error) {
 	var publisherID string
 	if prod.PublisherName != "" {
 		id, err := resolver.resolve(ctx, prod.PublisherName)
 		if err != nil {
-			return fmt.Errorf("resolving publisher %q: %w", prod.PublisherName, err)
+			return "", fmt.Errorf("resolving publisher %q: %w", prod.PublisherName, err)
 		}
 		publisherID = id
 	}
@@ -169,14 +193,30 @@ func importOne(ctx context.Context, c *client.Client, resolver *publisherResolve
 	volume := prod.Volume
 	created, err := client.Create[vo.VolumeVO](ctx, c, "volumes", &volume)
 	if err != nil {
-		return err
+		return "", err
 	}
 	if publisherID != "" {
 		if _, _, err := client.Patch[vo.VolumeVO](ctx, c, "volumes", created.ID, map[string]any{"publisherIds": []string{publisherID}}); err != nil {
-			return fmt.Errorf("linking publisher: %w", err)
+			return created.ID, fmt.Errorf("linking publisher: %w", err)
 		}
 	}
-	return nil
+	return created.ID, nil
+}
+
+// attachCover fetches the product's cover from DriveThruRPG and stores it as
+// the volume's own asset. Any failure - no cover, fetch error, upload error -
+// is a warning: the volume already imported successfully and stays imported.
+func attachCover(ctx context.Context, cmd *cobra.Command, c *client.Client, assets *client.AssetsClient, volumeID string, prod dtrpg.Product) bool {
+	cover, err := fetchCover(ctx, prod.CoverURL)
+	if err != nil {
+		cmd.Printf("  cover skipped for %s: %v\n", prod.Title, err)
+		return false
+	}
+	if _, _, err := client.SetVolumeCover(ctx, c, assets, volumeID, cover.Data, cover.ContentType); err != nil {
+		cmd.Printf("  cover skipped for %s: %v\n", prod.Title, err)
+		return false
+	}
+	return true
 }
 
 // publisherResolver matches publisher names case-insensitively against
@@ -255,6 +295,7 @@ func printSample(cmd *cobra.Command, label string, products []dtrpg.Product) {
 func printSummary(cmd *cobra.Command, plan importPlan, s importSummary) {
 	cmd.Printf("Done: %d imported, %d already imported, %d skipped (archived), %d failed\n",
 		s.imported, len(plan.alreadyImported), len(plan.skippedArchived), s.failed)
+	cmd.Printf("Covers: %d attached, %d skipped\n", s.coversAttached, s.coversSkipped)
 	for _, f := range s.failures {
 		cmd.Printf("  failed: %s\n", f)
 	}

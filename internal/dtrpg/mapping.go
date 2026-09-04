@@ -10,11 +10,13 @@ import (
 )
 
 // Product is one DriveThruRPG ordered product mapped to a catalog volume,
-// keeping the fields the importer classifies on alongside the volume payload.
+// keeping the fields the importer classifies and acts on alongside the volume
+// payload.
 type Product struct {
 	ProductID     string // dtrpg_product_id; the idempotency key
 	Title         string
 	PublisherName string
+	CoverURL      string // source image to fetch and store as the volume cover
 	Archived      bool
 	Volume        catvo.VolumeVO
 }
@@ -49,6 +51,7 @@ func mapProduct(
 		ProductID:     strconv.FormatUint(attrs.ProductID, 10),
 		Title:         attrs.Name,
 		PublisherName: publisherName(attrs, item.Relationships, publishers),
+		CoverURL:      coverURL(info),
 		Archived:      attrs.Archived != 0,
 	}
 
@@ -56,7 +59,7 @@ func mapProduct(
 		Title:       attrs.Name,
 		Description: shortDescription(info),
 		Tags:        filterTags(attrs.Filters),
-		Properties:  properties(attrs, info),
+		Properties:  properties(attrs),
 	}
 	return p
 }
@@ -100,18 +103,15 @@ func filterTags(filters []library.OrderProductFilter) []modelcore.TagVO {
 	return out
 }
 
-func properties(attrs library.OrderProductAttributes, info *library.OrderProductInfo) []modelcore.PropertyVO {
-	props := make([]modelcore.PropertyVO, 0, 5)
+func properties(attrs library.OrderProductAttributes) []modelcore.PropertyVO {
+	props := make([]modelcore.PropertyVO, 0, 2)
 	add := func(name, value string) {
 		if strings.TrimSpace(value) != "" {
 			props = append(props, modelcore.PropertyVO{Name: name, Kind: "string", Value: value})
 		}
 	}
 	add(PropProductID, strconv.FormatUint(attrs.ProductID, 10))
-	add(PropOrderProductID, strconv.FormatUint(attrs.OrderProductID, 10))
-	add(PropPurchaseDate, deref(attrs.DatePurchased))
 	add(PropISBN, deref(attrs.ISBN))
-	add(PropCoverURL, coverURL(info))
 	return props
 }
 

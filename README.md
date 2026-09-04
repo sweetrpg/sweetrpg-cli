@@ -125,11 +125,20 @@ sweetrpg-catalog import dtrpg library --dry-run     # show the plan, write nothi
 sweetrpg-catalog import dtrpg library               # create volumes and publishers
 ```
 
-Each product maps to a volume: title, short description, and category filters as tags. ISBN,
-purchase date, cover image URL, and the DriveThruRPG product and order identifiers are stored as
-`dtrpg_*` properties. Publisher names resolve case-insensitively to existing publisher records,
-creating one on a miss. Re-runs are idempotent - a product whose `dtrpg_product_id` already
-appears on a volume is skipped.
+Each product maps to a volume: title, short description, and category filters as tags. The
+DriveThruRPG product ID and ISBN (when present) are stored as `dtrpg_*` properties - purchase
+date and order ID are not, since they're personal-order facts rather than catalog data. The
+product's cover image is downloaded and stored as the volume's own cover asset, not referenced
+by URL. Publisher names resolve case-insensitively to existing publisher records, creating one
+on a miss. Re-runs are idempotent - a product whose `dtrpg_product_id` already appears on a
+volume is skipped.
+
+`import dtrpg library` is meant to be run by an admin or editor: created volumes, publishers,
+and cover links land as **live records**, not review-queue submissions - a bulk import can create
+hundreds or thousands of records, and routing all of that through review would make the queue
+unusable. There's no separate "publish immediately" flag; it follows from the caller's role the
+same way `POST /publishers` and `PATCH /volumes` already do. A submitter-role token still works
+for the writes that support it, but expect it to behave differently than documented here.
 
 Flags:
 
