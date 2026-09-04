@@ -2,6 +2,11 @@
 
 No changes yet.
 
+## 0.3.0 - 2026-09-04
+
+### Added
+- Add a version command
+
 ## 0.2.0 - 2026-09-04
 
 ### Added
