@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sweetrpg/catalog-cli/internal/client"
+	"github.com/sweetrpg/sweetrpg-cli/internal/client"
 )
 
 func stubOps(name string, candidates []candidate, calls *int) entityOps {

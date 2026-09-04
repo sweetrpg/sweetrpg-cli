@@ -71,7 +71,7 @@ func (s *SessionSource) Token(ctx context.Context) (string, error) {
 		if errors.Is(err, ErrExpired) || errors.Is(err, ErrDenied) {
 			_ = s.Store.Delete()
 			s.session = nil
-			return "", &AuthError{Msg: "your session has been revoked or expired: run 'sweetrpg-catalog auth login'"}
+			return "", &AuthError{Msg: "your session has been revoked or expired: run 'sweetrpg auth login'"}
 		}
 		return "", err
 	}

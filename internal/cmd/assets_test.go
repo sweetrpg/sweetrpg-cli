@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sweetrpg/catalog-cli/internal/client"
+	"github.com/sweetrpg/sweetrpg-cli/internal/client"
 )
 
 const coverVolumeID = "aaaaaaaaaaaaaaaaaaaaaaaa"
@@ -98,6 +98,10 @@ func TestEditVolumeCoverRejectsUnsupportedTypeBeforeAnyHTTP(t *testing.T) {
 
 func TestEditVolumeCoverWithoutAssetsURLFailsClearly(t *testing.T) {
 	newCmdFixture(t, http.StatusOK, patchedVolumeJSON)
+	// newAssetsClient reads the real config file via os.UserHomeDir; sandbox
+	// HOME so a developer's actual ~/.config/sweetrpg/cli.yaml (which may
+	// well set services.assetsWeb) can't mask the "unset" case under test.
+	t.Setenv("HOME", t.TempDir())
 	t.Setenv("SWEETRPG_CATALOG_API_URL", "http://127.0.0.1:9")
 	t.Setenv("SWEETRPG_AUTH_DOMAIN", "dev.example.auth0.com")
 	t.Setenv("SWEETRPG_AUTH_CLIENT_ID", "client")

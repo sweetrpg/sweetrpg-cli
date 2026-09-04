@@ -9,7 +9,7 @@ import (
 
 	"github.com/manifoldco/promptui"
 	"github.com/spf13/cobra"
-	"github.com/sweetrpg/catalog-cli/internal/client"
+	"github.com/sweetrpg/sweetrpg-cli/internal/client"
 )
 
 var (

@@ -4,13 +4,26 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"os"
 	"os/exec"
 	"runtime"
 	"time"
 
 	"github.com/spf13/cobra"
-	"github.com/sweetrpg/catalog-cli/internal/auth"
+	"github.com/sweetrpg/sweetrpg-cli/internal/auth"
+	"github.com/sweetrpg/sweetrpg-cli/internal/config"
 )
+
+// resolveAuthConfig combines the config file's authTenant section with env
+// vars and the build-time defaults via auth.ResolveConfig, so an operator
+// can repoint the Auth0 tenant without a rebuild.
+func resolveAuthConfig() (*auth.Config, error) {
+	cfg, err := config.Load(config.Sources{Getenv: os.Getenv, HomeDir: os.UserHomeDir})
+	if err != nil {
+		return nil, err
+	}
+	return auth.ResolveConfig(cfg.AuthDomain, cfg.AuthClientID, cfg.AuthAudience)
+}
 
 // ExitCoder lets subcommands pick their process exit code. Auth failures are
 // 3 so scripts can react without parsing stderr.
@@ -61,7 +74,7 @@ var authLoginCmd = &cobra.Command{
 	Use:   "login",
 	Short: "Log in via your browser using a device code",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		cfg, err := auth.DefaultConfig()
+		cfg, err := resolveAuthConfig()
 		if err != nil {
 			return err
 		}
@@ -86,7 +99,7 @@ var authLogoutCmd = &cobra.Command{
 	Use:   "logout",
 	Short: "Revoke and remove stored credentials",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		cfg, err := auth.DefaultConfig()
+		cfg, err := resolveAuthConfig()
 		if err != nil {
 			return err
 		}

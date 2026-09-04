@@ -7,10 +7,10 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
-	"github.com/sweetrpg/catalog-cli/internal/auth"
-	"github.com/sweetrpg/catalog-cli/internal/client"
-	"github.com/sweetrpg/catalog-cli/internal/dtrpg"
 	vo "github.com/sweetrpg/catalog-objects.go/vo"
+	"github.com/sweetrpg/sweetrpg-cli/internal/auth"
+	"github.com/sweetrpg/sweetrpg-cli/internal/client"
+	"github.com/sweetrpg/sweetrpg-cli/internal/dtrpg"
 )
 
 var (
@@ -35,12 +35,12 @@ const scanPageSize = 500
 // defaultRequirePlatformSession refuses the import (exit 3) when no platform
 // session is stored, before any DriveThruRPG call is made.
 func defaultRequirePlatformSession() error {
-	if _, err := auth.DefaultConfig(); err != nil {
+	if _, err := resolveAuthConfig(); err != nil {
 		return err
 	}
 	if _, err := (auth.KeyringStore{}).Load(); err != nil {
 		if auth.IsAuthRequired(err) {
-			return &ExitError{Code: 3, Err: fmt.Errorf("not logged in to the platform: run 'sweetrpg-catalog auth login'")}
+			return &ExitError{Code: 3, Err: fmt.Errorf("not logged in to the platform: run 'sweetrpg auth login'")}
 		}
 		return err
 	}

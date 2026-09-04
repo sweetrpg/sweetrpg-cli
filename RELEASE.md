@@ -2,7 +2,7 @@
 
 ## Summary
 
-1. Trigger the [**Prepare Release**](https://github.com/sweetrpg/catalog-cli/actions/workflows/prepare-release.yaml) workflow.
+1. Trigger the [**Prepare Release**](https://github.com/sweetrpg/sweetrpg-cli/actions/workflows/prepare-release.yaml) workflow.
 1. Merge PR to `master`.
 1. Merge `master` into `develop`.
 
@@ -17,7 +17,7 @@ git checkout develop
 git pull
 ```
 
-Trigger the [**Prepare Release**](https://github.com/sweetrpg/catalog-cli/actions/workflows/prepare-release.yaml) workflow (`workflow_dispatch` in the Actions tab). It:
+Trigger the [**Prepare Release**](https://github.com/sweetrpg/sweetrpg-cli/actions/workflows/prepare-release.yaml) workflow (`workflow_dispatch` in the Actions tab). It:
 
 1. Runs `git-cliff --bump` against `develop` to determine the next version (e.g. `0.1.0`)
    from commits since the last tag.
@@ -25,13 +25,13 @@ Trigger the [**Prepare Release**](https://github.com/sweetrpg/catalog-cli/action
 3. Opens a PR from an auto-created `release/0.1.0` branch into `master`.
 
 You review the PR (catch anything that shouldn't ship, fix as needed) - the
-[**PR Validation**](https://github.com/sweetrpg/catalog-cli/actions/workflows/pr.yaml)
+[**PR Validation**](https://github.com/sweetrpg/sweetrpg-cli/actions/workflows/pr.yaml)
 workflow runs against it - merge into `master`, which triggers tagging via the
-[**Tag Release**](https://github.com/sweetrpg/catalog-cli/actions/workflows/tag-release.yaml)
+[**Tag Release**](https://github.com/sweetrpg/sweetrpg-cli/actions/workflows/tag-release.yaml)
 workflow.
 
 The tag push triggers the
-[**Release**](https://github.com/sweetrpg/catalog-cli/actions/workflows/release.yaml)
+[**Release**](https://github.com/sweetrpg/sweetrpg-cli/actions/workflows/release.yaml)
 workflow, which re-runs the test suite against the tagged commit, requests the new version
 from the Go module proxy so `go get` and pkg.go.dev see it immediately, generates the
 changelog scoped to that tag, attaches it to a GitHub Release, and merges `master` back
@@ -47,4 +47,4 @@ whichever branch is the repo's current default, and prepare-release must run aga
 gh workflow run prepare-release.yaml --ref develop
 ```
 
-Or trigger it directly from the [Prepare Release workflow page](https://github.com/sweetrpg/catalog-cli/actions/workflows/prepare-release.yaml), selecting `develop` from the branch dropdown.
+Or trigger it directly from the [Prepare Release workflow page](https://github.com/sweetrpg/sweetrpg-cli/actions/workflows/prepare-release.yaml), selecting `develop` from the branch dropdown.

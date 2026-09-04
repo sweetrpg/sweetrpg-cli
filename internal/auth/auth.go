@@ -37,16 +37,26 @@ type Config struct {
 	PollIntervalFloor time.Duration
 }
 
-// DefaultConfig resolves the build-time settings, falling back to
-// SWEETRPG_AUTH_DOMAIN / SWEETRPG_AUTH_CLIENT_ID / SWEETRPG_AUTH_AUDIENCE for
-// dev runs (plain `go run` bakes nothing in). It errors when neither source
-// provides a full configuration.
+// DefaultConfig resolves auth settings from the build-time values only (no
+// env var or config file override). Most callers want ResolveConfig instead;
+// this exists for callers with no config file context.
 func DefaultConfig() (*Config, error) {
-	domain := firstNonEmpty(Domain, os.Getenv("SWEETRPG_AUTH_DOMAIN"))
-	clientID := firstNonEmpty(ClientID, os.Getenv("SWEETRPG_AUTH_CLIENT_ID"))
-	audience := firstNonEmpty(Audience, os.Getenv("SWEETRPG_AUTH_AUDIENCE"))
+	return ResolveConfig("", "", "")
+}
+
+// ResolveConfig resolves the Auth0 tenant by precedence: env var >
+// fileDomain/fileClientID/fileAudience (the config file's authTenant
+// section) > the build-time Domain/ClientID/Audience vars baked in via
+// -ldflags at release time. A release binary ships with the tenant baked
+// in, but an operator can still repoint it via env var or config file
+// without a rebuild - the baked value is a default, not a hardcode. It
+// errors when no source provides a full configuration.
+func ResolveConfig(fileDomain, fileClientID, fileAudience string) (*Config, error) {
+	domain := firstNonEmpty(os.Getenv("SWEETRPG_AUTH_DOMAIN"), fileDomain, Domain)
+	clientID := firstNonEmpty(os.Getenv("SWEETRPG_AUTH_CLIENT_ID"), fileClientID, ClientID)
+	audience := firstNonEmpty(os.Getenv("SWEETRPG_AUTH_AUDIENCE"), fileAudience, Audience)
 	if domain == "" || clientID == "" || audience == "" {
-		return nil, fmt.Errorf("auth is not configured: set SWEETRPG_AUTH_DOMAIN, SWEETRPG_AUTH_CLIENT_ID, and SWEETRPG_AUTH_AUDIENCE (or rebuild with -ldflags setting sweetrpg.auth domain, client id, and audience)")
+		return nil, fmt.Errorf("auth is not configured: set SWEETRPG_AUTH_DOMAIN, SWEETRPG_AUTH_CLIENT_ID, and SWEETRPG_AUTH_AUDIENCE (env var, authTenant in the config file, or rebuild with -ldflags setting sweetrpg.auth domain, client id, and audience)")
 	}
 	return &Config{Domain: domain, ClientID: clientID, Audience: audience, Scopes: Scopes}, nil
 }

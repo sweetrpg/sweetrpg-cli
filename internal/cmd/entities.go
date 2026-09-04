@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"github.com/spf13/pflag"
-	"github.com/sweetrpg/catalog-cli/internal/client"
+	"github.com/sweetrpg/sweetrpg-cli/internal/client"
 )
 
 // Relation names one modeled connection to another entity type. WireName is

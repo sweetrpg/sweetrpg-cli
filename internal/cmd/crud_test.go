@@ -13,7 +13,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
-	"github.com/sweetrpg/catalog-cli/internal/client"
+	"github.com/sweetrpg/sweetrpg-cli/internal/client"
 	"gopkg.in/yaml.v3"
 )
 

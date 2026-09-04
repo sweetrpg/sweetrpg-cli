@@ -6,10 +6,9 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 
-	"github.com/sweetrpg/catalog-cli/internal/dtrpg"
+	"github.com/sweetrpg/sweetrpg-cli/internal/dtrpg"
 )
 
 // dtrpgAuthServer stands in for the DriveThruRPG auth_key endpoint so
@@ -58,93 +57,6 @@ func runImportChild(t *testing.T, name string, args ...string) (string, error) {
 	return out.String(), err
 }
 
-func TestDTRPGLoginStoresPastedKeyWithoutEchoing(t *testing.T) {
-	auth := dtrpgAuthServer(t, http.StatusOK)
-	store := &dtrpg.MemoryKeyStore{}
-	withImportSeams(t, store, auth.URL)
-	flagDTRPGCredentials = false
-	promptSecret = func(string) (string, error) { return "  paste-key-123  ", nil }
-
-	out, err := runImportChild(t, "login")
-	if err != nil {
-		t.Fatalf("login: %v", err)
-	}
-	if got, _ := store.LoadKey(); got != "paste-key-123" {
-		t.Fatalf("stored key = %q, want trimmed paste-key-123", got)
-	}
-	if strings.Contains(out, "paste-key-123") {
-		t.Errorf("key material leaked to stdout: %q", out)
-	}
-}
-
-func TestDTRPGLoginRejectsInvalidKeyAndStoresNothing(t *testing.T) {
-	auth := dtrpgAuthServer(t, http.StatusUnauthorized)
-	store := &dtrpg.MemoryKeyStore{}
-	withImportSeams(t, store, auth.URL)
-	promptSecret = func(string) (string, error) { return "bad-key", nil }
-
-	_, err := runImportChild(t, "login")
-	if err == nil || !strings.Contains(err.Error(), "DriveThruRPG login failed") {
-		t.Fatalf("want login-failed error, got %v", err)
-	}
-	if _, loadErr := store.LoadKey(); !errors.Is(loadErr, dtrpg.ErrNoKey) {
-		t.Errorf("invalid key was persisted")
-	}
-}
-
-func TestDTRPGLoginKeychainUnavailableReportsAndPersistsNothing(t *testing.T) {
-	auth := dtrpgAuthServer(t, http.StatusOK)
-	withImportSeams(t, brokenKeyStore{}, auth.URL)
-	promptSecret = func(string) (string, error) { return "good-key", nil }
-
-	_, err := runImportChild(t, "login")
-	if err == nil || !strings.Contains(err.Error(), "OS keychain") {
-		t.Fatalf("want keychain error, got %v", err)
-	}
-}
-
-func TestDTRPGLoginCredentialsFlowMintsKey(t *testing.T) {
-	auth := dtrpgAuthServer(t, http.StatusOK)
-	store := &dtrpg.MemoryKeyStore{}
-	withImportSeams(t, store, auth.URL)
-	flagDTRPGCredentials = true
-	promptLine = func(string) (string, error) { return "user@example.com", nil }
-	promptSecret = func(label string) (string, error) { return "s3cret", nil }
-	credentialLogin = func(_ context.Context, email, password string) (string, error) {
-		if email != "user@example.com" || password != "s3cret" {
-			return "", errors.New("unexpected credentials")
-		}
-		return "minted-key", nil
-	}
-
-	out, err := runImportChild(t, "login")
-	if err != nil {
-		t.Fatalf("credentials login: %v", err)
-	}
-	if got, _ := store.LoadKey(); got != "minted-key" {
-		t.Fatalf("stored key = %q, want minted-key", got)
-	}
-	if strings.Contains(out, "s3cret") || strings.Contains(out, "minted-key") {
-		t.Errorf("secret material leaked to stdout: %q", out)
-	}
-}
-
-func TestDTRPGLogoutIsIdempotent(t *testing.T) {
-	store := &dtrpg.MemoryKeyStore{}
-	_ = store.SaveKey("k")
-	withImportSeams(t, store, "")
-
-	if _, err := runImportChild(t, "logout"); err != nil {
-		t.Fatalf("logout with key: %v", err)
-	}
-	if _, err := store.LoadKey(); !errors.Is(err, dtrpg.ErrNoKey) {
-		t.Errorf("key still present after logout")
-	}
-	if _, err := runImportChild(t, "logout"); err != nil {
-		t.Fatalf("logout without key must be a no-op, got %v", err)
-	}
-}
-
 // brokenKeyStore fails every persist so the keychain-unavailable path can be
 // exercised.
 type brokenKeyStore struct{}
@@ -152,3 +64,21 @@ type brokenKeyStore struct{}
 func (brokenKeyStore) SaveKey(string) error     { return errors.New("secret service unavailable") }
 func (brokenKeyStore) LoadKey() (string, error) { return "", dtrpg.ErrNoKey }
 func (brokenKeyStore) DeleteKey() error         { return nil }
+
+// TestImportDTRPGRelocatedUnderCatalog verifies the import command tree
+// resolves at `catalog import dtrpg library`, not the old top-level `import
+// dtrpg library` shape, without actually executing it (a real run touches
+// the keychain and network).
+func TestImportDTRPGRelocatedUnderCatalog(t *testing.T) {
+	buildTree()
+	found, _, err := rootCmd.Find([]string{"catalog", "import", "dtrpg", "library"})
+	if err != nil {
+		t.Fatalf("Find: %v", err)
+	}
+	if found.Name() != "library" {
+		t.Errorf("resolved to %q, want library", found.Name())
+	}
+	if _, _, err := rootCmd.Find([]string{"import", "dtrpg", "library"}); err == nil {
+		t.Error("top-level `import dtrpg library` should no longer resolve")
+	}
+}

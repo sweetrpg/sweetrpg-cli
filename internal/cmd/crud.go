@@ -11,9 +11,9 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
-	"github.com/sweetrpg/catalog-cli/internal/auth"
-	"github.com/sweetrpg/catalog-cli/internal/client"
-	"github.com/sweetrpg/catalog-cli/internal/config"
+	"github.com/sweetrpg/sweetrpg-cli/internal/auth"
+	"github.com/sweetrpg/sweetrpg-cli/internal/client"
+	"github.com/sweetrpg/sweetrpg-cli/internal/config"
 )
 
 var (
@@ -68,7 +68,6 @@ func joinList(items []string) string {
 // requests go out unauthenticated (read endpoints are public).
 func newAPIClient(requireAuth bool) (*client.Client, error) {
 	cfg, err := config.Load(config.Sources{
-		FlagAPIURL:       flagAPIURL,
 		FlagAssetsWebURL: flagAssetsWebURL,
 		Getenv:           os.Getenv,
 		HomeDir:          os.UserHomeDir,
@@ -76,12 +75,16 @@ func newAPIClient(requireAuth bool) (*client.Client, error) {
 	if err != nil {
 		return nil, err
 	}
-	authCfg, err := auth.DefaultConfig()
+	apiURL, err := cfg.ServiceURL(os.Getenv, flagAPIURL, "catalog")
+	if err != nil {
+		return nil, err
+	}
+	authCfg, err := auth.ResolveConfig(cfg.AuthDomain, cfg.AuthClientID, cfg.AuthAudience)
 	if err != nil {
 		if !requireAuth {
 			// Reads are public; a binary built without baked-in auth settings
 			// (e.g. plain `go run`) still serves them, just with no token.
-			c, cerr := client.New(cfg.APIURL, func(context.Context) (string, error) { return "", nil })
+			c, cerr := client.New(apiURL, func(context.Context) (string, error) { return "", nil })
 			if cerr != nil {
 				return nil, cerr
 			}
@@ -92,7 +95,7 @@ func newAPIClient(requireAuth bool) (*client.Client, error) {
 	}
 	hc := &http.Client{Timeout: 30 * time.Second}
 	source := &auth.SessionSource{Cfg: authCfg, HTTP: hc, Store: auth.KeyringStore{}}
-	c, err := client.New(cfg.APIURL, tokenFunc(source, requireAuth))
+	c, err := client.New(apiURL, tokenFunc(source, requireAuth))
 	if err != nil {
 		return nil, err
 	}
@@ -266,7 +269,13 @@ func newViewCommand() *cobra.Command {
 				if err != nil {
 					return writeErr(err)
 				}
-				return printRecord(cmd, rec, format)
+				if err := printRecord(cmd, rec, format); err != nil {
+					return err
+				}
+				if format == formatHuman {
+					printCoverURL(cmd, name, rec)
+				}
+				return nil
 			},
 		}
 		child.Flags().Bool("json", false, "emit raw JSON")

@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sweetrpg/catalog-cli/internal/client"
-	"github.com/sweetrpg/catalog-cli/internal/dtrpg"
+	"github.com/sweetrpg/sweetrpg-cli/internal/client"
+	"github.com/sweetrpg/sweetrpg-cli/internal/dtrpg"
 )
 
 func TestDTRPGLibraryAttachesCoversAndIsolatesFailures(t *testing.T) {

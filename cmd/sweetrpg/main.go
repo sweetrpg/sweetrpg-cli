@@ -4,7 +4,7 @@ import (
 	"errors"
 	"os"
 
-	"github.com/sweetrpg/catalog-cli/internal/cmd"
+	"github.com/sweetrpg/sweetrpg-cli/internal/cmd"
 )
 
 func main() {
