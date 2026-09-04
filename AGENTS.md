@@ -5,10 +5,14 @@ working in this repository.
 
 ## About This Project
 
-`catalog-cli` is `sweetrpg-catalog`, a Go command-line client for `catalog-api`. It covers basic
-CRUD across catalog entity types (volume, publisher, studio, person, system, license, review,
-contribution), relationship linking/unlinking, and staged-asset upload. It talks to
-`catalog-api`'s existing HTTP API only - no backend changes.
+`sweetrpg-cli` is `sweetrpg`, a Go command-line client for the SweetRPG platform. One
+authenticated session (Auth0 device flow, keychain-stored refresh token) works across every
+command namespace: `catalog` covers basic CRUD across catalog entity types (volume, publisher,
+studio, person, system, license, review, contribution), relationship linking/unlinking, and
+cover/sample asset upload against assets-web; `api` is a generic authenticated HTTP passthrough
+against any configured service; `game-room import dtrpg` populates a user's own Game Room library
+from their DriveThruRPG account. It talks to each service's existing HTTP API only - no backend
+changes.
 
 ## Dependencies
 
@@ -18,10 +22,12 @@ this is a leaf binary.
 
 ## Configuration
 
-Config precedence: CLI flag > `SWEETRPG_CATALOG_API_URL` env var > `~/.config/sweetrpg/catalog-cli.yaml`.
+Config precedence per service: CLI flag (catalog only today) > `SWEETRPG_<SERVICE>_API_URL` env
+var (e.g. `SWEETRPG_CATALOG_API_URL`) > `~/.config/sweetrpg/cli.yaml`'s `services.<service>`
+entry.
 
 Auth uses Auth0 device authorization; refresh tokens live in the OS keychain under service name
-`sweetrpg-catalog-cli`.
+`sweetrpg-cli`.
 
 ## Committing Code
 
