@@ -109,23 +109,25 @@
 				
 				<option value="file26">github.com/sweetrpg/sweetrpg-cli/internal/cmd/resolve.go (54.8%)</option>
 				
-				<option value="file27">github.com/sweetrpg/sweetrpg-cli/internal/cmd/root.go (94.1%)</option>
+				<option value="file27">github.com/sweetrpg/sweetrpg-cli/internal/cmd/root.go (94.4%)</option>
 				
 				<option value="file28">github.com/sweetrpg/sweetrpg-cli/internal/cmd/search.go (86.4%)</option>
 				
-				<option value="file29">github.com/sweetrpg/sweetrpg-cli/internal/config/config.go (95.5%)</option>
+				<option value="file29">github.com/sweetrpg/sweetrpg-cli/internal/cmd/version.go (60.9%)</option>
 				
-				<option value="file30">github.com/sweetrpg/sweetrpg-cli/internal/dtrpg/cover.go (75.0%)</option>
+				<option value="file30">github.com/sweetrpg/sweetrpg-cli/internal/config/config.go (95.5%)</option>
 				
-				<option value="file31">github.com/sweetrpg/sweetrpg-cli/internal/dtrpg/keyring.go (40.9%)</option>
+				<option value="file31">github.com/sweetrpg/sweetrpg-cli/internal/dtrpg/cover.go (75.0%)</option>
 				
-				<option value="file32">github.com/sweetrpg/sweetrpg-cli/internal/dtrpg/mapping.go (96.9%)</option>
+				<option value="file32">github.com/sweetrpg/sweetrpg-cli/internal/dtrpg/keyring.go (40.9%)</option>
 				
-				<option value="file33">github.com/sweetrpg/sweetrpg-cli/internal/dtrpg/products.go (75.0%)</option>
+				<option value="file33">github.com/sweetrpg/sweetrpg-cli/internal/dtrpg/mapping.go (96.9%)</option>
 				
-				<option value="file34">github.com/sweetrpg/sweetrpg-cli/internal/dtrpg/session.go (87.5%)</option>
+				<option value="file34">github.com/sweetrpg/sweetrpg-cli/internal/dtrpg/products.go (75.0%)</option>
 				
-				<option value="file35">github.com/sweetrpg/sweetrpg-cli/internal/dtrpg/transport.go (100.0%)</option>
+				<option value="file35">github.com/sweetrpg/sweetrpg-cli/internal/dtrpg/session.go (87.5%)</option>
+				
+				<option value="file36">github.com/sweetrpg/sweetrpg-cli/internal/dtrpg/transport.go (100.0%)</option>
 				
 				</select>
 			</div>
@@ -4437,7 +4439,7 @@ var catalogCmd = &amp;cobra.Command{
 
 // buildTree attaches generated subcommands. It runs lazily (not in init) so
 // the entity registry is fully populated regardless of file init order.
-func buildTree() <span class="cov10" title="32">{
+func buildTree() <span class="cov10" title="33">{
         buildOnce.Do(func() </span><span class="cov1" title="1">{
                 rootCmd.PersistentFlags().StringVar(&amp;flagAPIURL, "api-url", "", "catalog API base URL (overrides env and config file)")
                 rootCmd.PersistentFlags().StringVar(&amp;flagAssetsWebURL, "assets-web-url", "", "assets-web base URL for asset uploads")
@@ -4455,6 +4457,8 @@ func buildTree() <span class="cov10" title="32">{
                 rootCmd.AddCommand(newAPICommand())
                 rootCmd.AddCommand(newGameRoomCommand())
                 rootCmd.AddCommand(newDTRPGCommand())
+                rootCmd.AddCommand(newVersionCommand())
+                rootCmd.Version = buildVersion()
         }</span>)
 }
 
@@ -4552,7 +4556,76 @@ Exact matches are preferred; otherwise every record containing the query is list
 }
 </pre>
 		
-		<pre class="file" id="file29" style="display: none">// Package config resolves CLI configuration from flags, environment, and the
+		<pre class="file" id="file29" style="display: none">package cmd
+
+import (
+        "fmt"
+        "runtime/debug"
+
+        "github.com/spf13/cobra"
+)
+
+// newVersionCommand reports what's actually running. It reads Go's build-info
+// mechanism (the same data `go version -m` reads) rather than requiring
+// ldflags wired into the release workflow - a stale `go install @latest`
+// pinned to a pre-fix pseudo-version shows up here too, which is the gap that
+// prompted adding this command in the first place.
+func newVersionCommand() *cobra.Command <span class="cov1" title="1">{
+        return &amp;cobra.Command{
+                Use:   "version",
+                Short: "Print the sweetrpg CLI version",
+                Args:  cobra.NoArgs,
+                RunE: func(cmd *cobra.Command, _ []string) error </span><span class="cov1" title="1">{
+                        cmd.Printf("sweetrpg %s\n", buildVersion())
+                        return nil
+                }</span>,
+        }
+}
+
+// buildVersion formats the module version plus a short VCS revision, e.g.
+// "v0.2.0 (1a8f7a05d4c7)" or "v0.2.0 (1a8f7a05d4c7, dirty)". Falls back to
+// "(devel)" for a plain `go build` with no embedded module version (e.g.
+// built from within its own repo rather than `go install`). Used both by the
+// version subcommand (prefixed with the tool name) and rootCmd.Version
+// (which cobra's own --version output already prefixes).
+func buildVersion() string <span class="cov3" title="3">{
+        info, ok := debug.ReadBuildInfo()
+        if !ok </span><span class="cov0" title="0">{
+                return "unknown (no build info embedded)"
+        }</span>
+
+        <span class="cov3" title="3">version := info.Main.Version
+        if version == "" </span><span class="cov0" title="0">{
+                version = "(devel)"
+        }</span>
+
+        <span class="cov3" title="3">var revision string
+        dirty := false
+        for _, setting := range info.Settings </span><span class="cov10" title="36">{
+                switch setting.Key </span>{
+                case "vcs.revision":<span class="cov0" title="0">
+                        revision = setting.Value</span>
+                case "vcs.modified":<span class="cov0" title="0">
+                        dirty = setting.Value == "true"</span>
+                }
+        }
+
+        <span class="cov3" title="3">out := version
+        if revision != "" </span><span class="cov0" title="0">{
+                if len(revision) &gt; 12 </span><span class="cov0" title="0">{
+                        revision = revision[:12]
+                }</span>
+                <span class="cov0" title="0">if dirty </span><span class="cov0" title="0">{
+                        out += fmt.Sprintf(" (%s, dirty)", revision)
+                }</span> else<span class="cov0" title="0"> {
+                        out += fmt.Sprintf(" (%s)", revision)
+                }</span>
+        }
+        <span class="cov3" title="3">return out</span>
+}
+</pre>
+		
+		<pre class="file" id="file30" style="display: none">// Package config resolves CLI configuration from flags, environment, and the
 // config file. Only non-secret settings live in the file; tokens go to the OS
 // keychain.
 package config
@@ -4794,7 +4867,7 @@ func firstNonEmpty(values ...string) string <span class="cov8" title="48">{
 }
 </pre>
 		
-		<pre class="file" id="file30" style="display: none">package dtrpg
+		<pre class="file" id="file31" style="display: none">package dtrpg
 
 import (
         "context"
@@ -4872,7 +4945,7 @@ func FetchCover(ctx context.Context, httpClient *http.Client, url string) (*Cove
 }
 </pre>
 		
-		<pre class="file" id="file31" style="display: none">package dtrpg
+		<pre class="file" id="file32" style="display: none">package dtrpg
 
 import (
         "errors"
@@ -4954,7 +5027,7 @@ func (m *MemoryKeyStore) DeleteKey() error <span class="cov10" title="3">{
 }</span>
 </pre>
 		
-		<pre class="file" id="file32" style="display: none">package dtrpg
+		<pre class="file" id="file33" style="display: none">package dtrpg
 
 import (
         "strconv"
@@ -5128,7 +5201,7 @@ func deref(s *string) string <span class="cov10" title="6">{
 }
 </pre>
 		
-		<pre class="file" id="file33" style="display: none">package dtrpg
+		<pre class="file" id="file34" style="display: none">package dtrpg
 
 import (
         "context"
@@ -5223,7 +5296,7 @@ func (s *Session) listPageWithRetry(ctx context.Context, params library.LibraryI
 }
 </pre>
 		
-		<pre class="file" id="file34" style="display: none">package dtrpg
+		<pre class="file" id="file35" style="display: none">package dtrpg
 
 import (
         "context"
@@ -5270,7 +5343,7 @@ func NewSession(ctx context.Context, appKey, baseURL string) (*Session, error) <
 }
 </pre>
 		
-		<pre class="file" id="file35" style="display: none">package dtrpg
+		<pre class="file" id="file36" style="display: none">package dtrpg
 
 import (
         "net/http"
