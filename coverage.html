@@ -77,7 +77,7 @@
 				
 				<option value="file10">github.com/sweetrpg/catalog-cli/internal/client/volume_assets.go (91.7%)</option>
 				
-				<option value="file11">github.com/sweetrpg/catalog-cli/internal/cmd/assets.go (79.2%)</option>
+				<option value="file11">github.com/sweetrpg/catalog-cli/internal/cmd/assets.go (87.5%)</option>
 				
 				<option value="file12">github.com/sweetrpg/catalog-cli/internal/cmd/auth.go (17.9%)</option>
 				
@@ -91,15 +91,29 @@
 				
 				<option value="file17">github.com/sweetrpg/catalog-cli/internal/cmd/format.go (53.8%)</option>
 				
-				<option value="file18">github.com/sweetrpg/catalog-cli/internal/cmd/link.go (88.9%)</option>
+				<option value="file18">github.com/sweetrpg/catalog-cli/internal/cmd/import.go (79.6%)</option>
 				
-				<option value="file19">github.com/sweetrpg/catalog-cli/internal/cmd/resolve.go (54.8%)</option>
+				<option value="file19">github.com/sweetrpg/catalog-cli/internal/cmd/import_library.go (84.1%)</option>
 				
-				<option value="file20">github.com/sweetrpg/catalog-cli/internal/cmd/root.go (93.1%)</option>
+				<option value="file20">github.com/sweetrpg/catalog-cli/internal/cmd/link.go (88.9%)</option>
 				
-				<option value="file21">github.com/sweetrpg/catalog-cli/internal/cmd/search.go (86.4%)</option>
+				<option value="file21">github.com/sweetrpg/catalog-cli/internal/cmd/resolve.go (54.8%)</option>
 				
-				<option value="file22">github.com/sweetrpg/catalog-cli/internal/config/config.go (97.6%)</option>
+				<option value="file22">github.com/sweetrpg/catalog-cli/internal/cmd/root.go (93.3%)</option>
+				
+				<option value="file23">github.com/sweetrpg/catalog-cli/internal/cmd/search.go (86.4%)</option>
+				
+				<option value="file24">github.com/sweetrpg/catalog-cli/internal/config/config.go (97.6%)</option>
+				
+				<option value="file25">github.com/sweetrpg/catalog-cli/internal/dtrpg/cover.go (75.0%)</option>
+				
+				<option value="file26">github.com/sweetrpg/catalog-cli/internal/dtrpg/keyring.go (40.9%)</option>
+				
+				<option value="file27">github.com/sweetrpg/catalog-cli/internal/dtrpg/mapping.go (96.9%)</option>
+				
+				<option value="file28">github.com/sweetrpg/catalog-cli/internal/dtrpg/products.go (73.3%)</option>
+				
+				<option value="file29">github.com/sweetrpg/catalog-cli/internal/dtrpg/session.go (86.7%)</option>
 				
 				</select>
 			</div>
@@ -1406,19 +1420,19 @@ import (
 )
 
 // buildAssetsClient is a var so tests can point uploads at a fixture server.
-var buildAssetsClient = func() (*client.AssetsClient, error) <span class="cov0" title="0">{ return newAssetsClient() }</span>
+var buildAssetsClient = func() (*client.AssetsClient, error) <span class="cov8" title="6">{ return newAssetsClient() }</span>
 
 // newAssetsClient wires the same keychain-backed session the catalog client
 // uses into an assets-web client. Uploads always require a session; there is
 // no anonymous fallback.
-func newAssetsClient() (*client.AssetsClient, error) <span class="cov1" title="1">{
+func newAssetsClient() (*client.AssetsClient, error) <span class="cov9" title="7">{
         cfg, err := config.Load(config.Sources{
                 FlagAPIURL:       flagAPIURL,
                 FlagAssetsWebURL: flagAssetsWebURL,
                 Getenv:           os.Getenv,
                 HomeDir:          os.UserHomeDir,
         })
-        if err != nil </span><span class="cov0" title="0">{
+        if err != nil </span><span class="cov8" title="6">{
                 return nil, err
         }</span>
         <span class="cov1" title="1">authCfg, err := auth.DefaultConfig()
@@ -1502,7 +1516,7 @@ type ExitError struct {
 }
 
 func (e *ExitError) Error() string <span class="cov8" title="7">{ return e.Err.Error() }</span>
-func (e *ExitError) ExitCode() int <span class="cov10" title="10">{ return e.Code }</span>
+func (e *ExitError) ExitCode() int <span class="cov10" title="12">{ return e.Code }</span>
 func (e *ExitError) Unwrap() error <span class="cov0" title="0">{ return e.Err }</span>
 
 // authExit tags errors the user fixes by logging in again.
@@ -2827,6 +2841,453 @@ func isEmptyValue(v reflect.Value) bool <span class="cov9" title="26">{
 import (
         "context"
         "fmt"
+        "strings"
+
+        "github.com/manifoldco/promptui"
+        dtrpgauth "github.com/pilgrimagesoftware/dtrpg-sdk.go/auth"
+        dtrpglib "github.com/pilgrimagesoftware/dtrpg-sdk.go/library"
+        "github.com/spf13/cobra"
+        "github.com/sweetrpg/catalog-cli/internal/dtrpg"
+)
+
+// Test seams. Production wiring reaches the real keychain, the real SDK, and
+// promptui; tests replace these to run without a terminal, a keychain, or the
+// network.
+var (
+        dtrpgKeyStore    = func() dtrpg.KeyStore <span class="cov0" title="0">{ return dtrpg.KeyringStore{} }</span>
+        dtrpgLoginBase   = "" // "" targets the production DriveThruRPG API
+        buildDTRPGClient = func(ctx context.Context, appKey string) (*dtrpg.Session, error) <span class="cov10" title="13">{
+                return dtrpg.NewSession(ctx, appKey, dtrpgLoginBase)
+        }</span>
+        credentialLogin = func(ctx context.Context, email, password string) (string, error) <span class="cov0" title="0">{
+                return dtrpgauth.LoginWithCredentials(ctx, email, password, dtrpglib.NewConfig(""))
+        }</span>
+        promptSecret = func(label string) (string, error) <span class="cov0" title="0">{
+                return (&amp;promptui.Prompt{Label: label, Mask: '*'}).Run()
+        }</span>
+        promptLine = func(label string) (string, error) <span class="cov0" title="0">{
+                return (&amp;promptui.Prompt{Label: label}).Run()
+        }</span>
+)
+
+var flagDTRPGCredentials bool
+
+// import subcommands are kept here so tests can drive them directly, matching
+// the pattern the generated entity commands use.
+var importChildren = map[string]*cobra.Command{}
+
+func newImportCommand() *cobra.Command <span class="cov1" title="1">{
+        imp := &amp;cobra.Command{
+                Use:   "import",
+                Short: "Bulk-import catalog records from external sources",
+        }
+        dtrpgCmd := &amp;cobra.Command{
+                Use:   "dtrpg",
+                Short: "Import from a DriveThruRPG library",
+        }
+
+        login := &amp;cobra.Command{
+                Use:   "login",
+                Short: "Store a DriveThruRPG application key in the OS keychain",
+                Args:  cobra.NoArgs,
+                RunE:  runDTRPGLogin,
+        }
+        login.Flags().BoolVar(&amp;flagDTRPGCredentials, "credentials", false,
+                "prompt for DriveThruRPG email and password and mint an application key instead of pasting one")
+
+        logout := &amp;cobra.Command{
+                Use:   "logout",
+                Short: "Delete the stored DriveThruRPG application key",
+                Args:  cobra.NoArgs,
+                RunE:  runDTRPGLogout,
+        }
+
+        library := &amp;cobra.Command{
+                Use:   "library",
+                Short: "Import owned DriveThruRPG products as catalog volumes",
+                Args:  cobra.NoArgs,
+                RunE:  runDTRPGLibrary,
+        }
+        library.Flags().BoolVar(&amp;flagImportDryRun, "dry-run", false,
+                "fetch the library and print the import plan without creating any record")
+        library.Flags().BoolVar(&amp;flagImportArchived, "include-archived", false,
+                "also import products whose DriveThruRPG files are archived")
+        library.Flags().Uint32Var(&amp;flagImportPageSize, "page-size", 0,
+                "DriveThruRPG page size for library retrieval (0 uses the server default)")
+
+        dtrpgCmd.AddCommand(login, logout, library)
+        imp.AddCommand(dtrpgCmd)
+
+        importChildren["login"] = login
+        importChildren["logout"] = logout
+        importChildren["library"] = library
+        return imp
+}</span>
+
+func runDTRPGLogin(cmd *cobra.Command, _ []string) error <span class="cov5" title="4">{
+        ctx := cmd.Context()
+
+        appKey, err := obtainAppKey(ctx)
+        if err != nil </span><span class="cov0" title="0">{
+                return err
+        }</span>
+        <span class="cov5" title="4">appKey = strings.TrimSpace(appKey)
+        if appKey == "" </span><span class="cov0" title="0">{
+                return usageErr("no DriveThruRPG application key provided")
+        }</span>
+
+        // Validate before persisting: a bad key should never reach the keychain.
+        <span class="cov5" title="4">if _, err := buildDTRPGClient(ctx, appKey); err != nil </span><span class="cov1" title="1">{
+                return err
+        }</span>
+        <span class="cov4" title="3">if err := dtrpgKeyStore().SaveKey(appKey); err != nil </span><span class="cov1" title="1">{
+                return fmt.Errorf("could not save the DriveThruRPG key to the OS keychain (%w); nothing was stored", err)
+        }</span>
+        <span class="cov3" title="2">cmd.Println("Stored DriveThruRPG application key.")
+        return nil</span>
+}
+
+// obtainAppKey returns an application key, either pasted at a masked prompt or
+// minted from interactively-entered credentials. The password is read through
+// the masked prompt only - never a flag or argv - and discarded after the
+// exchange.
+func obtainAppKey(ctx context.Context) (string, error) <span class="cov5" title="4">{
+        if !flagDTRPGCredentials </span><span class="cov4" title="3">{
+                return promptSecret("DriveThruRPG application key")
+        }</span>
+        <span class="cov1" title="1">email, err := promptLine("DriveThruRPG email")
+        if err != nil </span><span class="cov0" title="0">{
+                return "", err
+        }</span>
+        <span class="cov1" title="1">password, err := promptSecret("DriveThruRPG password")
+        if err != nil </span><span class="cov0" title="0">{
+                return "", err
+        }</span>
+        <span class="cov1" title="1">key, err := credentialLogin(ctx, strings.TrimSpace(email), password)
+        if err != nil </span><span class="cov0" title="0">{
+                return "", fmt.Errorf("credential login failed: %w", err)
+        }</span>
+        <span class="cov1" title="1">return key, nil</span>
+}
+
+func runDTRPGLogout(cmd *cobra.Command, _ []string) error <span class="cov3" title="2">{
+        if err := dtrpgKeyStore().DeleteKey(); err != nil </span><span class="cov0" title="0">{
+                return err
+        }</span>
+        <span class="cov3" title="2">cmd.Println("Removed the stored DriveThruRPG application key.")
+        return nil</span>
+}
+</pre>
+		
+		<pre class="file" id="file19" style="display: none">package cmd
+
+import (
+        "context"
+        "fmt"
+        "net/http"
+        "strings"
+
+        "github.com/spf13/cobra"
+        "github.com/sweetrpg/catalog-cli/internal/auth"
+        "github.com/sweetrpg/catalog-cli/internal/client"
+        "github.com/sweetrpg/catalog-cli/internal/dtrpg"
+        vo "github.com/sweetrpg/catalog-objects.go/vo"
+)
+
+var (
+        flagImportDryRun   bool
+        flagImportArchived bool
+        flagImportPageSize uint32
+
+        // requirePlatformSession is a seam so tests skip the keychain check.
+        requirePlatformSession = defaultRequirePlatformSession
+
+        // fetchCover is a seam so tests point cover downloads at a fixture server.
+        fetchCover = func(ctx context.Context, url string) (*dtrpg.Cover, error) <span class="cov0" title="0">{
+                return dtrpg.FetchCover(ctx, http.DefaultClient, url)
+        }</span>
+)
+
+// scanPageSize bounds each catalog-api list page during the dedup and
+// publisher scans. A personal library is a few hundred volumes, so this is a
+// handful of requests.
+const scanPageSize = 500
+
+// defaultRequirePlatformSession refuses the import (exit 3) when no platform
+// session is stored, before any DriveThruRPG call is made.
+func defaultRequirePlatformSession() error <span class="cov0" title="0">{
+        if _, err := auth.DefaultConfig(); err != nil </span><span class="cov0" title="0">{
+                return err
+        }</span>
+        <span class="cov0" title="0">if _, err := (auth.KeyringStore{}).Load(); err != nil </span><span class="cov0" title="0">{
+                if auth.IsAuthRequired(err) </span><span class="cov0" title="0">{
+                        return &amp;ExitError{Code: 3, Err: fmt.Errorf("not logged in to the platform: run 'sweetrpg-catalog auth login'")}
+                }</span>
+                <span class="cov0" title="0">return err</span>
+        }
+        <span class="cov0" title="0">return nil</span>
+}
+
+func runDTRPGLibrary(cmd *cobra.Command, _ []string) error <span class="cov8" title="11">{
+        ctx := cmd.Context()
+
+        if err := requirePlatformSession(); err != nil </span><span class="cov1" title="1">{
+                return err
+        }</span>
+        <span class="cov8" title="10">appKey, err := dtrpgKeyStore().LoadKey()
+        if err != nil </span><span class="cov1" title="1">{
+                return err
+        }</span>
+
+        <span class="cov7" title="9">session, err := buildDTRPGClient(ctx, appKey)
+        if err != nil </span><span class="cov0" title="0">{
+                return err
+        }</span>
+        <span class="cov7" title="9">lib, err := session.FetchLibrary(ctx, flagImportPageSize)
+        if err != nil </span><span class="cov0" title="0">{
+                return fmt.Errorf("fetching DriveThruRPG library: %w", err)
+        }</span>
+        <span class="cov7" title="9">products := dtrpg.MapProducts(lib)
+
+        c, err := buildAPIClient()
+        if err != nil </span><span class="cov0" title="0">{
+                return err
+        }</span>
+        <span class="cov7" title="9">known, err := importedProductIDs(ctx, c)
+        if err != nil </span><span class="cov0" title="0">{
+                return writeErr(err)
+        }</span>
+
+        <span class="cov7" title="9">plan := planImport(products, known, flagImportArchived)
+        printPlan(cmd, plan)
+
+        if flagImportDryRun </span><span class="cov1" title="1">{
+                cmd.Println("Dry run: no records created.")
+                return nil
+        }</span>
+
+        <span class="cov7" title="8">summary := executeImport(ctx, cmd, c, plan.toImport)
+        printSummary(cmd, plan, summary)
+        if summary.failed &gt; 0 </span><span class="cov1" title="1">{
+                return &amp;ExitError{Code: 1, Err: fmt.Errorf("%d product(s) failed to import", summary.failed)}
+        }</span>
+        <span class="cov7" title="7">return nil</span>
+}
+
+// importedProductIDs pages the volume list once and collects every
+// dtrpg_product_id property value already in the catalog.
+func importedProductIDs(ctx context.Context, c *client.Client) (map[string]bool, error) <span class="cov7" title="9">{
+        out := map[string]bool{}
+        for start := 0; ; start += scanPageSize </span><span class="cov7" title="9">{
+                page, err := client.List[vo.VolumeVO](ctx, c, "volumes", client.ListOptions{Start: start, Limit: scanPageSize})
+                if err != nil </span><span class="cov0" title="0">{
+                        return nil, err
+                }</span>
+                <span class="cov7" title="9">for _, v := range page </span><span class="cov1" title="1">{
+                        for _, p := range v.Properties </span><span class="cov1" title="1">{
+                                if p.Name == dtrpg.PropProductID &amp;&amp; p.Value != "" </span><span class="cov1" title="1">{
+                                        out[p.Value] = true
+                                }</span>
+                        }
+                }
+                <span class="cov7" title="9">if len(page) &lt; scanPageSize </span><span class="cov7" title="9">{
+                        return out, nil
+                }</span>
+        }
+}
+
+type importPlan struct {
+        toImport        []dtrpg.Product
+        alreadyImported []dtrpg.Product
+        skippedArchived []dtrpg.Product
+}
+
+// planImport classifies each mapped product. An already-imported product is
+// reported as such even when archived, so re-runs converge.
+func planImport(products []dtrpg.Product, known map[string]bool, includeArchived bool) importPlan <span class="cov7" title="9">{
+        var p importPlan
+        for _, prod := range products </span><span class="cov9" title="17">{
+                switch </span>{
+                case known[prod.ProductID]:<span class="cov1" title="1">
+                        p.alreadyImported = append(p.alreadyImported, prod)</span>
+                case prod.Archived &amp;&amp; !includeArchived:<span class="cov1" title="1">
+                        p.skippedArchived = append(p.skippedArchived, prod)</span>
+                default:<span class="cov9" title="15">
+                        p.toImport = append(p.toImport, prod)</span>
+                }
+        }
+        <span class="cov7" title="9">return p</span>
+}
+
+type importSummary struct {
+        imported       int
+        failed         int
+        failures       []string
+        coversAttached int
+        coversSkipped  int
+}
+
+func executeImport(ctx context.Context, cmd *cobra.Command, c *client.Client, products []dtrpg.Product) importSummary <span class="cov7" title="8">{
+        resolver := newPublisherResolver(c)
+        assets, assetsErr := buildAssetsClient()
+        if assetsErr != nil </span><span class="cov7" title="7">{
+                cmd.Printf("  covers disabled: %v\n", assetsErr)
+        }</span>
+
+        <span class="cov7" title="8">var s importSummary
+        for _, prod := range products </span><span class="cov8" title="13">{
+                volumeID, err := importOne(ctx, c, resolver, prod)
+                if err != nil </span><span class="cov1" title="1">{
+                        s.failed++
+                        s.failures = append(s.failures, fmt.Sprintf("%s: %v", prod.Title, err))
+                        cmd.Printf("  failed   %s (%v)\n", prod.Title, err)
+                        continue</span>
+                }
+                <span class="cov8" title="12">s.imported++
+                cmd.Printf("  imported %s\n", prod.Title)
+
+                if assetsErr != nil </span><span class="cov8" title="10">{
+                        s.coversSkipped++
+                        continue</span>
+                }
+                <span class="cov3" title="2">if attachCover(ctx, cmd, c, assets, volumeID, prod) </span><span class="cov1" title="1">{
+                        s.coversAttached++
+                }</span> else<span class="cov1" title="1"> {
+                        s.coversSkipped++
+                }</span>
+        }
+        <span class="cov7" title="8">return s</span>
+}
+
+// importOne creates the volume and, when the product names a publisher, links
+// the resolved publisher record to it. Returns the created volume's ID.
+func importOne(ctx context.Context, c *client.Client, resolver *publisherResolver, prod dtrpg.Product) (string, error) <span class="cov8" title="13">{
+        var publisherID string
+        if prod.PublisherName != "" </span><span class="cov8" title="10">{
+                id, err := resolver.resolve(ctx, prod.PublisherName)
+                if err != nil </span><span class="cov0" title="0">{
+                        return "", fmt.Errorf("resolving publisher %q: %w", prod.PublisherName, err)
+                }</span>
+                <span class="cov8" title="10">publisherID = id</span>
+        }
+
+        <span class="cov8" title="13">volume := prod.Volume
+        created, err := client.Create[vo.VolumeVO](ctx, c, "volumes", &amp;volume)
+        if err != nil </span><span class="cov1" title="1">{
+                return "", err
+        }</span>
+        <span class="cov8" title="12">if publisherID != "" </span><span class="cov7" title="9">{
+                if _, _, err := client.Patch[vo.VolumeVO](ctx, c, "volumes", created.ID, map[string]any{"publisherIds": []string{publisherID}}); err != nil </span><span class="cov0" title="0">{
+                        return created.ID, fmt.Errorf("linking publisher: %w", err)
+                }</span>
+        }
+        <span class="cov8" title="12">return created.ID, nil</span>
+}
+
+// attachCover fetches the product's cover from DriveThruRPG and stores it as
+// the volume's own asset. Any failure - no cover, fetch error, upload error -
+// is a warning: the volume already imported successfully and stays imported.
+func attachCover(ctx context.Context, cmd *cobra.Command, c *client.Client, assets *client.AssetsClient, volumeID string, prod dtrpg.Product) bool <span class="cov3" title="2">{
+        cover, err := fetchCover(ctx, prod.CoverURL)
+        if err != nil </span><span class="cov1" title="1">{
+                cmd.Printf("  cover skipped for %s: %v\n", prod.Title, err)
+                return false
+        }</span>
+        <span class="cov1" title="1">if _, _, err := client.SetVolumeCover(ctx, c, assets, volumeID, cover.Data, cover.ContentType); err != nil </span><span class="cov0" title="0">{
+                cmd.Printf("  cover skipped for %s: %v\n", prod.Title, err)
+                return false
+        }</span>
+        <span class="cov1" title="1">return true</span>
+}
+
+// publisherResolver matches publisher names case-insensitively against
+// existing records, loading the full list once and creating a record on the
+// first miss for a name.
+type publisherResolver struct {
+        c      *client.Client
+        byName map[string]string
+        loaded bool
+}
+
+func newPublisherResolver(c *client.Client) *publisherResolver <span class="cov7" title="8">{
+        return &amp;publisherResolver{c: c, byName: map[string]string{}}
+}</span>
+
+func (r *publisherResolver) load(ctx context.Context) error <span class="cov8" title="10">{
+        if r.loaded </span><span class="cov6" title="5">{
+                return nil
+        }</span>
+        <span class="cov6" title="5">for start := 0; ; start += scanPageSize </span><span class="cov6" title="5">{
+                page, err := client.List[vo.PublisherVO](ctx, r.c, "publishers", client.ListOptions{Start: start, Limit: scanPageSize})
+                if err != nil </span><span class="cov0" title="0">{
+                        return err
+                }</span>
+                <span class="cov6" title="5">for _, p := range page </span><span class="cov1" title="1">{
+                        if name := strings.ToLower(strings.TrimSpace(p.Name)); name != "" </span><span class="cov1" title="1">{
+                                r.byName[name] = p.ID
+                        }</span>
+                }
+                <span class="cov6" title="5">if len(page) &lt; scanPageSize </span><span class="cov6" title="5">{
+                        break</span>
+                }
+        }
+        <span class="cov6" title="5">r.loaded = true
+        return nil</span>
+}
+
+func (r *publisherResolver) resolve(ctx context.Context, name string) (string, error) <span class="cov8" title="10">{
+        if err := r.load(ctx); err != nil </span><span class="cov0" title="0">{
+                return "", err
+        }</span>
+        <span class="cov8" title="10">key := strings.ToLower(strings.TrimSpace(name))
+        if id, ok := r.byName[key]; ok </span><span class="cov6" title="5">{
+                return id, nil
+        }</span>
+        <span class="cov6" title="5">created, err := client.Create[vo.PublisherVO](ctx, r.c, "publishers", &amp;vo.PublisherVO{Name: name})
+        if err != nil </span><span class="cov0" title="0">{
+                return "", err
+        }</span>
+        <span class="cov6" title="5">r.byName[key] = created.ID
+        return created.ID, nil</span>
+}
+
+func printPlan(cmd *cobra.Command, plan importPlan) <span class="cov7" title="9">{
+        cmd.Printf("Plan: %d to import, %d already imported, %d skipped (archived)\n",
+                len(plan.toImport), len(plan.alreadyImported), len(plan.skippedArchived))
+        printSample(cmd, "to import", plan.toImport)
+        printSample(cmd, "skipped (archived)", plan.skippedArchived)
+}</span>
+
+func printSample(cmd *cobra.Command, label string, products []dtrpg.Product) <span class="cov10" title="18">{
+        const max = 10
+        if len(products) == 0 </span><span class="cov7" title="9">{
+                return
+        }</span>
+        <span class="cov7" title="9">cmd.Printf("  %s:\n", label)
+        for i, p := range products </span><span class="cov9" title="16">{
+                if i == max </span><span class="cov0" title="0">{
+                        cmd.Printf("    ... and %d more\n", len(products)-max)
+                        break</span>
+                }
+                <span class="cov9" title="16">cmd.Printf("    - %s\n", p.Title)</span>
+        }
+}
+
+func printSummary(cmd *cobra.Command, plan importPlan, s importSummary) <span class="cov7" title="8">{
+        cmd.Printf("Done: %d imported, %d already imported, %d skipped (archived), %d failed\n",
+                s.imported, len(plan.alreadyImported), len(plan.skippedArchived), s.failed)
+        cmd.Printf("Covers: %d attached, %d skipped\n", s.coversAttached, s.coversSkipped)
+        for _, f := range s.failures </span><span class="cov1" title="1">{
+                cmd.Printf("  failed: %s\n", f)
+        }</span>
+}
+</pre>
+		
+		<pre class="file" id="file20" style="display: none">package cmd
+
+import (
+        "context"
+        "fmt"
         "slices"
 
         "github.com/spf13/cobra"
@@ -3070,7 +3531,7 @@ func pointerIDs[T any](srcs []*T) []string <span class="cov6" title="8">{
 }
 </pre>
 		
-		<pre class="file" id="file19" style="display: none">package cmd
+		<pre class="file" id="file21" style="display: none">package cmd
 
 import (
         "context"
@@ -3194,7 +3655,7 @@ func confirmDelete(cmd *cobra.Command, entity, id string) error <span class="cov
 }
 </pre>
 		
-		<pre class="file" id="file20" style="display: none">package cmd
+		<pre class="file" id="file22" style="display: none">package cmd
 
 import (
         "errors"
@@ -3227,7 +3688,7 @@ var buildOnce sync.Once
 
 // buildTree attaches generated subcommands. It runs lazily (not in init) so
 // the entity registry is fully populated regardless of file init order.
-func buildTree() <span class="cov9" title="8">{
+func buildTree() <span class="cov10" title="25">{
         buildOnce.Do(func() </span><span class="cov1" title="1">{
                 rootCmd.PersistentFlags().StringVar(&amp;flagAPIURL, "api-url", "", "catalog API base URL (overrides env and config file)")
                 rootCmd.PersistentFlags().StringVar(&amp;flagAssetsWebURL, "assets-web-url", "", "assets-web base URL for asset uploads")
@@ -3240,51 +3701,52 @@ func buildTree() <span class="cov9" title="8">{
                 rootCmd.AddCommand(newLinkCommand())
                 rootCmd.AddCommand(newUnlinkCommand())
                 rootCmd.AddCommand(newSearchCommand())
+                rootCmd.AddCommand(newImportCommand())
         }</span>)
 }
 
 // Execute runs the root command. Errors returned by subcommands are printed by
 // cobra; the exit code is decided here so subcommands can signal specific codes.
-func Execute() error <span class="cov7" title="5">{
+func Execute() error <span class="cov5" title="5">{
         buildTree()
         rootCmd.SetFlagErrorFunc(func(_ *cobra.Command, err error) error </span><span class="cov0" title="0">{
                 return &amp;ExitError{Code: 2, Err: err}
         }</span>)
-        <span class="cov7" title="5">err := classifyUsage(rootCmd.Execute())
+        <span class="cov5" title="5">err := classifyUsage(rootCmd.Execute())
         // A --curl run that rendered its request(s) is a success, even though the
         // capture transport aborts the flow with a sentinel.
         if isCurlExit(err) </span><span class="cov1" title="1">{
                 return nil
         }</span>
-        <span class="cov6" title="4">return err</span>
+        <span class="cov4" title="4">return err</span>
 }
 
 // classifyUsage maps cobra's untyped command/argument errors to the documented
 // usage exit code. Cobra has no typed errors for these; the message shapes it
 // produces for them are stable.
-func classifyUsage(err error) error <span class="cov10" title="10">{
-        if err == nil </span><span class="cov7" title="5">{
+func classifyUsage(err error) error <span class="cov7" title="10">{
+        if err == nil </span><span class="cov5" title="5">{
                 return nil
         }</span>
-        <span class="cov7" title="5">var ec ExitCoder
+        <span class="cov5" title="5">var ec ExitCoder
         if errors.As(err, &amp;ec) </span><span class="cov0" title="0">{
                 return err
         }</span>
-        <span class="cov7" title="5">msg := err.Error()
+        <span class="cov5" title="5">msg := err.Error()
         if strings.HasPrefix(msg, "unknown command ") || strings.Contains(msg, " arg(s)") ||
-                strings.HasPrefix(msg, "unknown flag:") || strings.HasPrefix(msg, "unknown shorthand flag:") </span><span class="cov5" title="3">{
+                strings.HasPrefix(msg, "unknown flag:") || strings.HasPrefix(msg, "unknown shorthand flag:") </span><span class="cov4" title="3">{
                 return &amp;ExitError{Code: 2, Err: err}
         }</span>
-        <span class="cov3" title="2">return err</span>
+        <span class="cov2" title="2">return err</span>
 }
 
 // usageErr tags a validation failure as a usage error (exit code 2).
-func usageErr(format string, args ...any) error <span class="cov9" title="9">{
+func usageErr(format string, args ...any) error <span class="cov7" title="9">{
         return &amp;ExitError{Code: 2, Err: fmt.Errorf(format, args...)}
 }</span>
 </pre>
 		
-		<pre class="file" id="file21" style="display: none">package cmd
+		<pre class="file" id="file23" style="display: none">package cmd
 
 import (
         "fmt"
@@ -3337,7 +3799,7 @@ Exact matches are preferred; otherwise every record containing the query is list
 }
 </pre>
 		
-		<pre class="file" id="file22" style="display: none">// Package config resolves CLI configuration from flags, environment, and the
+		<pre class="file" id="file24" style="display: none">// Package config resolves CLI configuration from flags, environment, and the
 // config file. Only non-secret settings live in the file; tokens go to the OS
 // keychain.
 package config
@@ -3458,6 +3920,473 @@ func firstNonEmpty(values ...string) string <span class="cov8" title="25">{
                 }</span>
         }
         <span class="cov4" title="5">return ""</span>
+}
+</pre>
+		
+		<pre class="file" id="file25" style="display: none">package dtrpg
+
+import (
+        "context"
+        "fmt"
+        "io"
+        "net/http"
+        "strings"
+)
+
+// maxCoverBytes caps the download so a misbehaving response can't exhaust
+// memory on a bulk run.
+const maxCoverBytes = 20 &lt;&lt; 20 // 20MB
+
+// allowedCoverTypes mirrors assets-web's upload allowlist (client.Upload's doc
+// comment): a cover in any other format is a skip, not an upload attempt.
+var allowedCoverTypes = map[string]bool{
+        "image/png":  true,
+        "image/jpeg": true,
+        "image/webp": true,
+}
+
+// Cover is a downloaded cover image ready to upload.
+type Cover struct {
+        Data        []byte
+        ContentType string
+}
+
+// FetchCover downloads a product's cover image from DriveThruRPG. Every
+// failure mode (no URL, network error, non-2xx, oversized body, unsupported
+// content type) returns a nil *Cover and a descriptive error - callers treat
+// this as a per-product warning, never a fatal one.
+func FetchCover(ctx context.Context, httpClient *http.Client, url string) (*Cover, error) <span class="cov10" title="4">{
+        if strings.TrimSpace(url) == "" </span><span class="cov1" title="1">{
+                return nil, fmt.Errorf("no cover image for this product")
+        }</span>
+        <span class="cov8" title="3">if httpClient == nil </span><span class="cov0" title="0">{
+                httpClient = http.DefaultClient
+        }</span>
+
+        <span class="cov8" title="3">req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+        if err != nil </span><span class="cov0" title="0">{
+                return nil, err
+        }</span>
+        <span class="cov8" title="3">resp, err := httpClient.Do(req)
+        if err != nil </span><span class="cov0" title="0">{
+                return nil, err
+        }</span>
+        <span class="cov8" title="3">defer func() </span><span class="cov8" title="3">{ _ = resp.Body.Close() }</span>()
+
+        <span class="cov8" title="3">if resp.StatusCode &lt; 200 || resp.StatusCode &gt;= 300 </span><span class="cov1" title="1">{
+                return nil, fmt.Errorf("cover fetch failed: %s returned %d", url, resp.StatusCode)
+        }</span>
+
+        <span class="cov5" title="2">data, err := io.ReadAll(io.LimitReader(resp.Body, maxCoverBytes+1))
+        if err != nil </span><span class="cov0" title="0">{
+                return nil, err
+        }</span>
+        <span class="cov5" title="2">if len(data) &gt; maxCoverBytes </span><span class="cov0" title="0">{
+                return nil, fmt.Errorf("cover image exceeds %d bytes", maxCoverBytes)
+        }</span>
+
+        <span class="cov5" title="2">contentType := resp.Header.Get("Content-Type")
+        if idx := strings.Index(contentType, ";"); idx &gt;= 0 </span><span class="cov0" title="0">{
+                contentType = contentType[:idx]
+        }</span>
+        <span class="cov5" title="2">contentType = strings.TrimSpace(contentType)
+        if contentType == "" </span><span class="cov0" title="0">{
+                contentType = http.DetectContentType(data)
+        }</span>
+        <span class="cov5" title="2">if !allowedCoverTypes[contentType] </span><span class="cov1" title="1">{
+                return nil, fmt.Errorf("unsupported cover content type %q (supported: png, jpeg, webp)", contentType)
+        }</span>
+
+        <span class="cov1" title="1">return &amp;Cover{Data: data, ContentType: contentType}, nil</span>
+}
+</pre>
+		
+		<pre class="file" id="file26" style="display: none">package dtrpg
+
+import (
+        "errors"
+
+        "github.com/zalando/go-keyring"
+)
+
+// ErrNoKey means no DriveThruRPG application key is stored.
+var ErrNoKey = errors.New("no DriveThruRPG key stored: run 'sweetrpg-catalog import dtrpg login'")
+
+// KeyStore persists the DriveThruRPG application key. The seam keeps commands
+// testable and lets a broken keychain surface as a clear refusal instead of a
+// plaintext fallback.
+type KeyStore interface {
+        SaveKey(key string) error
+        LoadKey() (string, error)
+        DeleteKey() error
+}
+
+// KeyringStore persists the key in the OS keychain via go-keyring.
+type KeyringStore struct{}
+
+var _ KeyStore = KeyringStore{}
+
+func (KeyringStore) SaveKey(key string) error <span class="cov0" title="0">{
+        if key == "" </span><span class="cov0" title="0">{
+                return errors.New("refusing to store an empty DriveThruRPG key")
+        }</span>
+        <span class="cov0" title="0">return keyring.Set(KeychainService, KeychainAccount, key)</span>
+}
+
+func (KeyringStore) LoadKey() (string, error) <span class="cov0" title="0">{
+        key, err := keyring.Get(KeychainService, KeychainAccount)
+        if errors.Is(err, keyring.ErrNotFound) </span><span class="cov0" title="0">{
+                return "", ErrNoKey
+        }</span>
+        <span class="cov0" title="0">if err != nil </span><span class="cov0" title="0">{
+                return "", err
+        }</span>
+        <span class="cov0" title="0">return key, nil</span>
+}
+
+func (KeyringStore) DeleteKey() error <span class="cov0" title="0">{
+        err := keyring.Delete(KeychainService, KeychainAccount)
+        if errors.Is(err, keyring.ErrNotFound) </span><span class="cov0" title="0">{
+                return nil // idempotent logout
+        }</span>
+        <span class="cov0" title="0">return err</span>
+}
+
+// MemoryKeyStore is an in-process KeyStore for tests.
+type MemoryKeyStore struct {
+        key string
+        set bool
+}
+
+var _ KeyStore = (*MemoryKeyStore)(nil)
+
+func (m *MemoryKeyStore) SaveKey(key string) error <span class="cov6" title="2">{
+        if key == "" </span><span class="cov1" title="1">{
+                return errors.New("refusing to store an empty DriveThruRPG key")
+        }</span>
+        <span class="cov1" title="1">m.key, m.set = key, true
+        return nil</span>
+}
+
+func (m *MemoryKeyStore) LoadKey() (string, error) <span class="cov10" title="3">{
+        if !m.set </span><span class="cov6" title="2">{
+                return "", ErrNoKey
+        }</span>
+        <span class="cov1" title="1">return m.key, nil</span>
+}
+
+func (m *MemoryKeyStore) DeleteKey() error <span class="cov10" title="3">{
+        m.key, m.set = "", false
+        return nil
+}</span>
+</pre>
+		
+		<pre class="file" id="file27" style="display: none">package dtrpg
+
+import (
+        "strconv"
+        "strings"
+
+        "github.com/pilgrimagesoftware/dtrpg-sdk.go/library"
+        catvo "github.com/sweetrpg/catalog-objects.go/vo"
+        modelcore "github.com/sweetrpg/model-core.go/vo"
+)
+
+// Product is one DriveThruRPG ordered product mapped to a catalog volume,
+// keeping the fields the importer classifies and acts on alongside the volume
+// payload.
+type Product struct {
+        ProductID     string // dtrpg_product_id; the idempotency key
+        Title         string
+        PublisherName string
+        CoverURL      string // source image to fetch and store as the volume cover
+        Archived      bool
+        Volume        catvo.VolumeVO
+}
+
+// MapProducts converts a fetched library into catalog volumes. Mapping is
+// conservative: only title, short description, and category tags land in volume
+// fields; ISBN, purchase date, cover URL, and the raw DTRPG identifiers ride in
+// properties where a wrong guess can't pollute a typed field.
+func MapProducts(lib Library) []Product <span class="cov6" title="3">{
+        publishers, products := indexIncluded(lib.Included)
+
+        out := make([]Product, 0, len(lib.Products))
+        for _, item := range lib.Products </span><span class="cov6" title="3">{
+                out = append(out, mapProduct(item, publishers, products))
+        }</span>
+        <span class="cov6" title="3">return out</span>
+}
+
+func mapProduct(
+        item library.OrderProductItem,
+        publishers map[string]*library.PublisherAttributes,
+        products map[string]*library.OrderProductInfo,
+) Product <span class="cov6" title="3">{
+        attrs := item.Attributes
+
+        info := attrs.Product
+        if info == nil </span><span class="cov4" title="2">{
+                info = products[relID(item.Relationships, func(r *library.OrderProductRelationships) *library.RelationshipRef </span><span class="cov1" title="1">{ return r.Product }</span>)]
+        }
+
+        <span class="cov6" title="3">p := Product{
+                ProductID:     strconv.FormatUint(attrs.ProductID, 10),
+                Title:         attrs.Name,
+                PublisherName: publisherName(attrs, item.Relationships, publishers),
+                CoverURL:      coverURL(info),
+                Archived:      attrs.Archived != 0,
+        }
+
+        p.Volume = catvo.VolumeVO{
+                Title:       attrs.Name,
+                Description: shortDescription(info),
+                Tags:        filterTags(attrs.Filters),
+                Properties:  properties(attrs),
+        }
+        return p</span>
+}
+
+// publisherName prefers the publisher embedded on the product, falling back to
+// the sideloaded resource named by the publisher relationship.
+func publisherName(
+        attrs library.OrderProductAttributes,
+        rels *library.OrderProductRelationships,
+        publishers map[string]*library.PublisherAttributes,
+) string <span class="cov6" title="3">{
+        if attrs.Publisher != nil &amp;&amp; strings.TrimSpace(attrs.Publisher.Name) != "" </span><span class="cov1" title="1">{
+                return strings.TrimSpace(attrs.Publisher.Name)
+        }</span>
+        <span class="cov4" title="2">if pub := publishers[relID(rels, func(r *library.OrderProductRelationships) *library.RelationshipRef </span><span class="cov1" title="1">{ return r.Publisher }</span>)]; pub != nil <span class="cov1" title="1">{
+                return strings.TrimSpace(pub.Name)
+        }</span>
+        <span class="cov1" title="1">return ""</span>
+}
+
+func shortDescription(info *library.OrderProductInfo) string <span class="cov6" title="3">{
+        if info == nil || info.Description == nil || info.Description.ShortDescription == nil </span><span class="cov1" title="1">{
+                return ""
+        }</span>
+        <span class="cov4" title="2">return strings.TrimSpace(*info.Description.ShortDescription)</span>
+}
+
+// filterTags turns DriveThruRPG category filters into value-less tags, keeping
+// first-seen order and dropping blanks and duplicates.
+func filterTags(filters []library.OrderProductFilter) []modelcore.TagVO <span class="cov6" title="3">{
+        seen := map[string]bool{}
+        out := make([]modelcore.TagVO, 0, len(filters))
+        for _, f := range filters </span><span class="cov7" title="4">{
+                name := strings.TrimSpace(f.Name)
+                if name == "" || seen[strings.ToLower(name)] </span><span class="cov4" title="2">{
+                        continue</span>
+                }
+                <span class="cov4" title="2">seen[strings.ToLower(name)] = true
+                out = append(out, modelcore.TagVO{Name: name})</span>
+        }
+        <span class="cov6" title="3">return out</span>
+}
+
+func properties(attrs library.OrderProductAttributes) []modelcore.PropertyVO <span class="cov6" title="3">{
+        props := make([]modelcore.PropertyVO, 0, 2)
+        add := func(name, value string) </span><span class="cov10" title="6">{
+                if strings.TrimSpace(value) != "" </span><span class="cov7" title="4">{
+                        props = append(props, modelcore.PropertyVO{Name: name, Kind: "string", Value: value})
+                }</span>
+        }
+        <span class="cov6" title="3">add(PropProductID, strconv.FormatUint(attrs.ProductID, 10))
+        add(PropISBN, deref(attrs.ISBN))
+        return props</span>
+}
+
+// coverURL returns the best available cover image as an absolute URL.
+func coverURL(info *library.OrderProductInfo) string <span class="cov6" title="3">{
+        if info == nil </span><span class="cov1" title="1">{
+                return ""
+        }</span>
+        <span class="cov4" title="2">for _, candidate := range []*string{info.WebImage, info.Image, info.Thumbnail, info.Thumbnail100} </span><span class="cov6" title="3">{
+                if path := deref(candidate); path != "" </span><span class="cov4" title="2">{
+                        return absoluteImageURL(path)
+                }</span>
+        }
+        <span class="cov0" title="0">return ""</span>
+}
+
+func absoluteImageURL(path string) string <span class="cov4" title="2">{
+        if strings.HasPrefix(path, "http://") || strings.HasPrefix(path, "https://") </span><span class="cov1" title="1">{
+                return path
+        }</span>
+        <span class="cov1" title="1">return imageBaseURL + strings.TrimPrefix(path, "/")</span>
+}
+
+// indexIncluded splits the flat JSON:API included array into per-type lookups
+// keyed by resource id.
+func indexIncluded(included []library.IncludedItem) (map[string]*library.PublisherAttributes, map[string]*library.OrderProductInfo) <span class="cov6" title="3">{
+        publishers := map[string]*library.PublisherAttributes{}
+        products := map[string]*library.OrderProductInfo{}
+        for _, entry := range included </span><span class="cov4" title="2">{
+                if pub := entry.AsPublisher(); pub != nil </span><span class="cov1" title="1">{
+                        publishers[entry.ID] = pub
+                }</span>
+                <span class="cov4" title="2">if prod := entry.AsProduct(); prod != nil </span><span class="cov1" title="1">{
+                        products[entry.ID] = prod
+                }</span>
+        }
+        <span class="cov6" title="3">return publishers, products</span>
+}
+
+// relID reads the referenced resource id from one relationship, or "" when the
+// relationship is absent.
+func relID(rels *library.OrderProductRelationships, pick func(*library.OrderProductRelationships) *library.RelationshipRef) string <span class="cov7" title="4">{
+        if rels == nil </span><span class="cov4" title="2">{
+                return ""
+        }</span>
+        <span class="cov4" title="2">ref := pick(rels)
+        if ref == nil || ref.Data == nil </span><span class="cov0" title="0">{
+                return ""
+        }</span>
+        <span class="cov4" title="2">return ref.Data.ID</span>
+}
+
+func deref(s *string) string <span class="cov10" title="6">{
+        if s == nil </span><span class="cov6" title="3">{
+                return ""
+        }</span>
+        <span class="cov6" title="3">return strings.TrimSpace(*s)</span>
+}
+</pre>
+		
+		<pre class="file" id="file28" style="display: none">package dtrpg
+
+import (
+        "context"
+        "errors"
+        "time"
+
+        "github.com/pilgrimagesoftware/dtrpg-sdk.go/library"
+)
+
+// maxRateLimitRetries bounds Retry-After honoring so a server stuck returning
+// 429 can't hang the import forever.
+const maxRateLimitRetries = 5
+
+// sleepFn is time.Sleep, indirected so tests don't wait out real Retry-After
+// intervals.
+var sleepFn = func(ctx context.Context, d time.Duration) error <span class="cov0" title="0">{
+        t := time.NewTimer(d)
+        defer t.Stop()
+        select </span>{
+        case &lt;-ctx.Done():<span class="cov0" title="0">
+                return ctx.Err()</span>
+        case &lt;-t.C:<span class="cov0" title="0">
+                return nil</span>
+        }
+}
+
+// Library is the owner's full DriveThruRPG library: every ordered product
+// across all pages, plus the sideloaded Publisher/Product resources they
+// reference.
+type Library struct {
+        Products []library.OrderProductItem
+        Included []library.IncludedItem
+}
+
+// FetchLibrary pages through the authenticated user's order_products, archived
+// items included, requesting filter categories so tags can be mapped. Rate-limit
+// responses carrying Retry-After are waited out before retrying the same page.
+func (s *Session) FetchLibrary(ctx context.Context, pageSize uint32) (Library, error) <span class="cov5" title="2">{
+        var out Library
+        yes := true
+        page := uint32(1)
+
+        for </span><span class="cov8" title="3">{
+                params := library.LibraryItemsParams{
+                        Page:       &amp;page,
+                        GetFilters: &amp;yes,
+                        Archived:   &amp;yes,
+                }
+                if pageSize &gt; 0 </span><span class="cov5" title="2">{
+                        params.PageSize = &amp;pageSize
+                }</span>
+
+                <span class="cov8" title="3">resp, err := s.listPageWithRetry(ctx, params)
+                if err != nil </span><span class="cov0" title="0">{
+                        return Library{}, err
+                }</span>
+
+                <span class="cov8" title="3">out.Products = append(out.Products, resp.Data...)
+                out.Included = append(out.Included, resp.Included...)
+
+                if len(resp.Data) == 0 || resp.Links.Next == nil </span><span class="cov5" title="2">{
+                        return out, nil
+                }</span>
+                <span class="cov1" title="1">page++</span>
+        }
+}
+
+// listPageWithRetry issues one ListOrderProducts call, retrying after the
+// server's Retry-After delay on rate-limit responses.
+func (s *Session) listPageWithRetry(ctx context.Context, params library.LibraryItemsParams) (library.OrderProductListResponse, error) <span class="cov8" title="3">{
+        for attempt := 0; ; attempt++ </span><span class="cov10" title="4">{
+                resp, err := s.lib.ListOrderProducts(ctx, params)
+                if err == nil </span><span class="cov8" title="3">{
+                        return resp, nil
+                }</span>
+
+                <span class="cov1" title="1">var apiErr *library.APIError
+                if attempt &lt; maxRateLimitRetries &amp;&amp; errors.As(err, &amp;apiErr) &amp;&amp; apiErr.RetryAfter != nil </span><span class="cov1" title="1">{
+                        if sleepErr := sleepFn(ctx, *apiErr.RetryAfter); sleepErr != nil </span><span class="cov0" title="0">{
+                                return library.OrderProductListResponse{}, sleepErr
+                        }</span>
+                        <span class="cov1" title="1">continue</span>
+                }
+                <span class="cov0" title="0">return library.OrderProductListResponse{}, err</span>
+        }
+}
+</pre>
+		
+		<pre class="file" id="file29" style="display: none">package dtrpg
+
+import (
+        "context"
+        "fmt"
+
+        sdk "github.com/pilgrimagesoftware/dtrpg-sdk.go"
+        "github.com/pilgrimagesoftware/dtrpg-sdk.go/auth"
+        "github.com/pilgrimagesoftware/dtrpg-sdk.go/library"
+)
+
+// Session is an authenticated DriveThruRPG library client. The JWT it holds is
+// never persisted; it dies with the process, and each run re-exchanges the
+// stored application key for a fresh one.
+type Session struct {
+        lib *library.Client
+}
+
+// NewSession exchanges appKey for a DriveThruRPG session and returns a library
+// client bound to it. baseURL overrides the production API endpoint (tests
+// point it at a fixture server); pass "" for production.
+func NewSession(ctx context.Context, appKey, baseURL string) (*Session, error) <span class="cov10" title="3">{
+        if appKey == "" </span><span class="cov1" title="1">{
+                return nil, ErrNoKey
+        }</span>
+        <span class="cov6" title="2">cfg := library.NewConfig(appKey)
+        if baseURL != "" </span><span class="cov6" title="2">{
+                cfg = library.NewConfigWithBaseURL(appKey, baseURL)
+        }</span>
+
+        <span class="cov6" title="2">client := sdk.NewSdkWithConfig(cfg)
+        token, err := auth.Authenticate(ctx, appKey, cfg)
+        if err != nil </span><span class="cov1" title="1">{
+                return nil, fmt.Errorf("DriveThruRPG login failed: %w", err)
+        }</span>
+        <span class="cov1" title="1">if _, err := client.ApplyAuthResponse(token); err != nil </span><span class="cov0" title="0">{
+                return nil, err
+        }</span>
+        <span class="cov1" title="1">lib, err := client.LibraryClient()
+        if err != nil </span><span class="cov0" title="0">{
+                return nil, err
+        }</span>
+        <span class="cov1" title="1">return &amp;Session{lib: lib}, nil</span>
 }
 </pre>
 		
