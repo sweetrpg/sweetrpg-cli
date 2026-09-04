@@ -556,3 +556,57 @@ func TestDefaultConfigFallsBackToEnvironment(t *testing.T) {
 		t.Errorf("partial env must still error, got %v", err)
 	}
 }
+
+// TestResolveConfigEnvOverridesBuiltIn regression-guards the precedence bug
+// where a release binary's baked-in tenant could never be overridden: env
+// var must win even when Domain/ClientID/Audience are non-empty.
+func TestResolveConfigEnvOverridesBuiltIn(t *testing.T) {
+	oldDomain, oldClient, oldAud := Domain, ClientID, Audience
+	defer func() { Domain, ClientID, Audience = oldDomain, oldClient, oldAud }()
+	Domain, ClientID, Audience = "baked.us.auth0.com", "baked-cid", "https://baked-aud"
+
+	t.Setenv("SWEETRPG_AUTH_DOMAIN", "env.us.auth0.com")
+	t.Setenv("SWEETRPG_AUTH_CLIENT_ID", "env-cid")
+	t.Setenv("SWEETRPG_AUTH_AUDIENCE", "https://env-aud")
+
+	cfg, err := ResolveConfig("file.us.auth0.com", "file-cid", "https://file-aud")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.Domain != "env.us.auth0.com" || cfg.ClientID != "env-cid" || cfg.Audience != "https://env-aud" {
+		t.Errorf("env var must win over file and built-in: %+v", cfg)
+	}
+}
+
+// TestResolveConfigFileOverridesBuiltIn: with no env var set, the config
+// file's authTenant section must win over the baked-in default.
+func TestResolveConfigFileOverridesBuiltIn(t *testing.T) {
+	oldDomain, oldClient, oldAud := Domain, ClientID, Audience
+	defer func() { Domain, ClientID, Audience = oldDomain, oldClient, oldAud }()
+	Domain, ClientID, Audience = "baked.us.auth0.com", "baked-cid", "https://baked-aud"
+
+	cfg, err := ResolveConfig("file.us.auth0.com", "file-cid", "https://file-aud")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.Domain != "file.us.auth0.com" || cfg.ClientID != "file-cid" || cfg.Audience != "https://file-aud" {
+		t.Errorf("file config must win over built-in: %+v", cfg)
+	}
+}
+
+// TestResolveConfigFallsBackToBuiltIn: with neither env var nor file value
+// set, the baked-in default still applies (a release binary works with no
+// configuration at all).
+func TestResolveConfigFallsBackToBuiltIn(t *testing.T) {
+	oldDomain, oldClient, oldAud := Domain, ClientID, Audience
+	defer func() { Domain, ClientID, Audience = oldDomain, oldClient, oldAud }()
+	Domain, ClientID, Audience = "baked.us.auth0.com", "baked-cid", "https://baked-aud"
+
+	cfg, err := ResolveConfig("", "", "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.Domain != "baked.us.auth0.com" || cfg.ClientID != "baked-cid" || cfg.Audience != "https://baked-aud" {
+		t.Errorf("built-in default should apply when nothing overrides it: %+v", cfg)
+	}
+}

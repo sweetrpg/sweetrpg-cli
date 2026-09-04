@@ -50,7 +50,7 @@ func defaultResolveAPIRequest(service string) (baseURL string, tokens func(conte
 	if err != nil {
 		return "", nil, err
 	}
-	authCfg, err := auth.DefaultConfig()
+	authCfg, err := auth.ResolveConfig(cfg.AuthDomain, cfg.AuthClientID, cfg.AuthAudience)
 	if err != nil {
 		return "", nil, err
 	}

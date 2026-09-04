@@ -30,6 +30,12 @@ type Config struct {
 	// FilePath is the resolved config file path, or "" when no home
 	// directory is available.
 	FilePath string
+	// AuthDomain, AuthClientID, and AuthAudience are the config file's
+	// authTenant section, letting an operator repoint the Auth0 tenant
+	// without a rebuild. See auth.ResolveConfig for the full precedence.
+	AuthDomain   string
+	AuthClientID string
+	AuthAudience string
 }
 
 // Sources carries the raw inputs to resolution. Getenv and HomeDir are
@@ -67,6 +73,9 @@ func Load(s Sources) (*Config, error) {
 		Output:       output,
 		Services:     file.Services,
 		FilePath:     filePath(s.HomeDir),
+		AuthDomain:   file.AuthTenant.Domain,
+		AuthClientID: file.AuthTenant.ClientID,
+		AuthAudience: file.AuthTenant.Audience,
 	}, nil
 }
 
@@ -122,6 +131,16 @@ type fileConfig struct {
 	Services     map[string]string `yaml:"services"`
 	AssetsWebURL string            `yaml:"assets-web-url"`
 	Output       string            `yaml:"output"`
+	AuthTenant   authTenantFile    `yaml:"authTenant"`
+}
+
+// authTenantFile lets an operator repoint the Auth0 tenant without a
+// rebuild; see auth.ResolveConfig for how it combines with env vars and the
+// build-time defaults.
+type authTenantFile struct {
+	Domain   string `yaml:"domain"`
+	ClientID string `yaml:"clientId"`
+	Audience string `yaml:"audience"`
 }
 
 func loadFile(homeDir func() (string, error)) (*fileConfig, error) {
@@ -145,6 +164,9 @@ func loadFile(homeDir func() (string, error)) (*fileConfig, error) {
 	for k, v := range fc.Services {
 		fc.Services[k] = strings.TrimSpace(v)
 	}
+	fc.AuthTenant.Domain = strings.TrimSpace(fc.AuthTenant.Domain)
+	fc.AuthTenant.ClientID = strings.TrimSpace(fc.AuthTenant.ClientID)
+	fc.AuthTenant.Audience = strings.TrimSpace(fc.AuthTenant.Audience)
 	return &fc, nil
 }
 

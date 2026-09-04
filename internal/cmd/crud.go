@@ -79,7 +79,7 @@ func newAPIClient(requireAuth bool) (*client.Client, error) {
 	if err != nil {
 		return nil, err
 	}
-	authCfg, err := auth.DefaultConfig()
+	authCfg, err := auth.ResolveConfig(cfg.AuthDomain, cfg.AuthClientID, cfg.AuthAudience)
 	if err != nil {
 		if !requireAuth {
 			// Reads are public; a binary built without baked-in auth settings

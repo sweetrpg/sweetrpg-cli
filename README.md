@@ -38,13 +38,29 @@ assets-web-url: https://assets-web.dev.sweetrpg.com
 
 ## Authentication
 
-Commands that write require a login. Auth settings are baked into release builds; for dev runs
-against plain `go run`, export them instead:
+Commands that write require a login. A release build ships with its Auth0 tenant baked in, but
+that's a default, not a hardcode - it resolves in this order:
+
+1. `SWEETRPG_AUTH_DOMAIN` / `SWEETRPG_AUTH_CLIENT_ID` / `SWEETRPG_AUTH_AUDIENCE` environment
+   variables
+2. `~/.config/sweetrpg/cli.yaml`'s `authTenant` section
+3. The values baked in via `-ldflags` at release time
+
+For dev runs against plain `go run` (nothing baked in), set one of the first two:
 
 ```bash
 export SWEETRPG_AUTH_DOMAIN=dev-xxxx.us.auth0.com
 export SWEETRPG_AUTH_CLIENT_ID=...
 export SWEETRPG_AUTH_AUDIENCE=https://catalog-api
+```
+
+or in the config file:
+
+```yaml
+authTenant:
+  domain: dev-xxxx.us.auth0.com
+  clientId: ...
+  audience: https://catalog-api
 ```
 
 Run once per machine:

@@ -35,7 +35,7 @@ const scanPageSize = 500
 // defaultRequirePlatformSession refuses the import (exit 3) when no platform
 // session is stored, before any DriveThruRPG call is made.
 func defaultRequirePlatformSession() error {
-	if _, err := auth.DefaultConfig(); err != nil {
+	if _, err := resolveAuthConfig(); err != nil {
 		return err
 	}
 	if _, err := (auth.KeyringStore{}).Load(); err != nil {

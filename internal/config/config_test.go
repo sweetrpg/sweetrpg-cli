@@ -27,6 +27,31 @@ func writeFile(t *testing.T, content string) func() (string, error) {
 
 const fileWithBoth = "services:\n  catalog: https://file.example.com\noutput: json\n"
 
+func TestLoadParsesAuthTenant(t *testing.T) {
+	fileBody := "authTenant:\n  domain: file.us.auth0.com\n  clientId: file-cid\n  audience: https://file-aud\n"
+	home := writeFile(t, fileBody)
+
+	cfg, err := Load(Sources{Getenv: func(string) string { return "" }, HomeDir: home})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.AuthDomain != "file.us.auth0.com" || cfg.AuthClientID != "file-cid" || cfg.AuthAudience != "https://file-aud" {
+		t.Errorf("unexpected authTenant: domain=%q clientID=%q audience=%q", cfg.AuthDomain, cfg.AuthClientID, cfg.AuthAudience)
+	}
+}
+
+func TestLoadWithoutAuthTenantLeavesItEmpty(t *testing.T) {
+	home := writeFile(t, fileWithBoth)
+
+	cfg, err := Load(Sources{Getenv: func(string) string { return "" }, HomeDir: home})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.AuthDomain != "" || cfg.AuthClientID != "" || cfg.AuthAudience != "" {
+		t.Errorf("authTenant should be empty when absent: domain=%q clientID=%q audience=%q", cfg.AuthDomain, cfg.AuthClientID, cfg.AuthAudience)
+	}
+}
+
 func TestServiceURLPrecedence(t *testing.T) {
 	tests := []struct {
 		name      string

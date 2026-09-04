@@ -27,7 +27,7 @@ func newAssetsClient() (*client.AssetsClient, error) {
 	if err != nil {
 		return nil, err
 	}
-	authCfg, err := auth.DefaultConfig()
+	authCfg, err := auth.ResolveConfig(cfg.AuthDomain, cfg.AuthClientID, cfg.AuthAudience)
 	if err != nil {
 		return nil, fmt.Errorf("asset upload requires a session: %w", err)
 	}
