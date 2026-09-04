@@ -10,24 +10,34 @@ import (
 )
 
 var rootCmd = &cobra.Command{
-	Use:   "sweetrpg-catalog",
-	Short: "Command-line client for the SweetRPG catalog service",
-	Long: "Manage SweetRPG catalog records: volumes, publishers, studios, persons, systems,\n" +
-		"licenses, reviews, and contributions.\n\n" +
-		"Entity commands share one shape:\n" +
-		"  sweetrpg-catalog add <type> <name> [property flags]\n" +
-		"  sweetrpg-catalog edit <type> <name-or-id> [property flags]\n" +
-		"  sweetrpg-catalog view <type> <name-or-id> [--json | --yaml]\n" +
-		"  sweetrpg-catalog delete <type> <name-or-id> [--force]\n\n" +
-		"Links connect two entities (either argument order):\n" +
-		"  sweetrpg-catalog link volume \"Dungeon World\" publisher \"Evil Hat Productions\"\n\n" +
-		"Name arguments resolve to record IDs; 24-hex IDs are used directly. Ambiguous names\n" +
-		"prompt a picker, or fail with the candidate list when --yes is set.\n\n" +
-		"Shell completion: sweetrpg-catalog completion [bash|zsh|fish|powershell]\n" +
+	Use:   "sweetrpg",
+	Short: "Command-line client for the SweetRPG platform",
+	Long: "Manage SweetRPG platform services from one authenticated session.\n\n" +
+		"  sweetrpg catalog ...      catalog records: volumes, publishers, studios, ...\n" +
+		"  sweetrpg api ...          generic authenticated request against any service\n\n" +
+		"Shell completion: sweetrpg completion [bash|zsh|fish|powershell]\n" +
 		"Exit codes: 0 success, 1 error, 2 usage, 3 authentication.",
 }
 
 var buildOnce sync.Once
+
+// catalogCmd groups the entity-registry commands (add/edit/view/delete/link/
+// unlink/search) under the catalog namespace.
+var catalogCmd = &cobra.Command{
+	Use:   "catalog",
+	Short: "Manage SweetRPG catalog records",
+	Long: "Manage SweetRPG catalog records: volumes, publishers, studios, persons, systems,\n" +
+		"licenses, reviews, and contributions.\n\n" +
+		"Entity commands share one shape:\n" +
+		"  sweetrpg catalog add <type> <name> [property flags]\n" +
+		"  sweetrpg catalog edit <type> <name-or-id> [property flags]\n" +
+		"  sweetrpg catalog view <type> <name-or-id> [--json | --yaml]\n" +
+		"  sweetrpg catalog delete <type> <name-or-id> [--force]\n\n" +
+		"Links connect two entities (either argument order):\n" +
+		"  sweetrpg catalog link volume \"Dungeon World\" publisher \"Evil Hat Productions\"\n\n" +
+		"Name arguments resolve to record IDs; 24-hex IDs are used directly. Ambiguous names\n" +
+		"prompt a picker, or fail with the candidate list when --yes is set.",
+}
 
 // buildTree attaches generated subcommands. It runs lazily (not in init) so
 // the entity registry is fully populated regardless of file init order.
@@ -37,14 +47,16 @@ func buildTree() {
 		rootCmd.PersistentFlags().StringVar(&flagAssetsWebURL, "assets-web-url", "", "assets-web base URL for asset uploads")
 		rootCmd.PersistentFlags().BoolVar(&flagYes, "yes", false, "assume non-interactive mode; fail on ambiguity with the candidate list")
 		rootCmd.PersistentFlags().BoolVar(&flagCurl, "curl", false, "print the equivalent cURL command(s) instead of calling the API")
-		rootCmd.AddCommand(newAddCommand())
-		rootCmd.AddCommand(newEditCommand())
-		rootCmd.AddCommand(newViewCommand())
-		rootCmd.AddCommand(newDeleteCommand())
-		rootCmd.AddCommand(newLinkCommand())
-		rootCmd.AddCommand(newUnlinkCommand())
-		rootCmd.AddCommand(newSearchCommand())
-		rootCmd.AddCommand(newImportCommand())
+		catalogCmd.AddCommand(newAddCommand())
+		catalogCmd.AddCommand(newEditCommand())
+		catalogCmd.AddCommand(newViewCommand())
+		catalogCmd.AddCommand(newDeleteCommand())
+		catalogCmd.AddCommand(newLinkCommand())
+		catalogCmd.AddCommand(newUnlinkCommand())
+		catalogCmd.AddCommand(newSearchCommand())
+		catalogCmd.AddCommand(newImportCommand())
+		rootCmd.AddCommand(catalogCmd)
+		rootCmd.AddCommand(newAPICommand())
 	})
 }
 

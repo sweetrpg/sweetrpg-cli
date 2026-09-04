@@ -1,4 +1,4 @@
-module github.com/sweetrpg/catalog-cli
+module github.com/sweetrpg/sweetrpg-cli
 
 go 1.26.5
 

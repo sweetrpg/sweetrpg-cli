@@ -11,8 +11,8 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 
-	"github.com/sweetrpg/catalog-cli/internal/auth"
-	"github.com/sweetrpg/catalog-cli/internal/client"
+	"github.com/sweetrpg/sweetrpg-cli/internal/auth"
+	"github.com/sweetrpg/sweetrpg-cli/internal/client"
 )
 
 func exitCodeOf(t *testing.T, err error) int {
@@ -34,7 +34,7 @@ func TestClassifyUsageMapsCobraCommandErrorsToExit2(t *testing.T) {
 		want int
 	}{
 		{"nil", nil, 0},
-		{"unknown command", errors.New(`unknown command "widget" for "sweetrpg-catalog add"`), 2},
+		{"unknown command", errors.New(`unknown command "widget" for "sweetrpg catalog add"`), 2},
 		{"arg count", errors.New("accepts 1 arg(s), received 2"), 2},
 		{"unknown flag", errors.New("unknown flag: --bogus"), 2},
 		{"server error", errors.New("connection refused"), 1},

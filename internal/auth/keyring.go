@@ -9,7 +9,7 @@ import (
 )
 
 // ServiceName is the OS-keychain service all CLI credentials live under.
-const ServiceName = "sweetrpg-catalog-cli"
+const ServiceName = "sweetrpg-cli"
 
 // currentAccountKey is the pointer record naming which subject's credentials
 // are active. It keeps the design "account = authenticated subject" while
@@ -18,7 +18,7 @@ const currentAccountKey = "current"
 
 // ErrNotLoggedIn means no usable stored credentials exist. Callers map it to
 // exit code 3 with a pointer at `auth login`.
-var ErrNotLoggedIn = errors.New("not logged in: run 'sweetrpg-catalog auth login'")
+var ErrNotLoggedIn = errors.New("not logged in: run 'sweetrpg auth login'")
 
 // Session is what persists between runs: who logged in and the refresh token
 // that proves it. Access tokens are never persisted - they are short-lived

@@ -7,9 +7,9 @@ import (
 	"os"
 	"time"
 
-	"github.com/sweetrpg/catalog-cli/internal/auth"
-	"github.com/sweetrpg/catalog-cli/internal/client"
-	"github.com/sweetrpg/catalog-cli/internal/config"
+	"github.com/sweetrpg/sweetrpg-cli/internal/auth"
+	"github.com/sweetrpg/sweetrpg-cli/internal/client"
+	"github.com/sweetrpg/sweetrpg-cli/internal/config"
 )
 
 // buildAssetsClient is a var so tests can point uploads at a fixture server.
@@ -20,7 +20,6 @@ var buildAssetsClient = func() (*client.AssetsClient, error) { return newAssetsC
 // no anonymous fallback.
 func newAssetsClient() (*client.AssetsClient, error) {
 	cfg, err := config.Load(config.Sources{
-		FlagAPIURL:       flagAPIURL,
 		FlagAssetsWebURL: flagAssetsWebURL,
 		Getenv:           os.Getenv,
 		HomeDir:          os.UserHomeDir,

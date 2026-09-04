@@ -10,8 +10,8 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/sweetrpg/catalog-cli/internal/client"
-	"github.com/sweetrpg/catalog-cli/internal/dtrpg"
+	"github.com/sweetrpg/sweetrpg-cli/internal/client"
+	"github.com/sweetrpg/sweetrpg-cli/internal/dtrpg"
 )
 
 // catalogStub routes the handful of catalog-api calls the import makes and

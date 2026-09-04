@@ -7,7 +7,7 @@ import (
 )
 
 // ErrNoKey means no DriveThruRPG application key is stored.
-var ErrNoKey = errors.New("no DriveThruRPG key stored: run 'sweetrpg-catalog import dtrpg login'")
+var ErrNoKey = errors.New("no DriveThruRPG key stored: run 'sweetrpg catalog import dtrpg login'")
 
 // KeyStore persists the DriveThruRPG application key. The seam keeps commands
 // testable and lets a broken keychain surface as a clear refusal instead of a

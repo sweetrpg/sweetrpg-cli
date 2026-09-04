@@ -9,7 +9,7 @@ import (
 	dtrpgauth "github.com/pilgrimagesoftware/dtrpg-sdk.go/auth"
 	dtrpglib "github.com/pilgrimagesoftware/dtrpg-sdk.go/library"
 	"github.com/spf13/cobra"
-	"github.com/sweetrpg/catalog-cli/internal/dtrpg"
+	"github.com/sweetrpg/sweetrpg-cli/internal/dtrpg"
 )
 
 // Test seams. Production wiring reaches the real keychain, the real SDK, and

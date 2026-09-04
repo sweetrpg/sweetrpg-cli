@@ -6,7 +6,7 @@ import (
 	"slices"
 
 	"github.com/spf13/cobra"
-	"github.com/sweetrpg/catalog-cli/internal/client"
+	"github.com/sweetrpg/sweetrpg-cli/internal/client"
 	vo "github.com/sweetrpg/catalog-objects.go/vo"
 )
 
@@ -66,7 +66,7 @@ func newLinkCommand() *cobra.Command {
 		Use:   "link <type1> <name-or-id1> <type2> <name-or-id2>",
 		Short: "Connect two catalog entities",
 		Long: "Connect two catalog entities, either argument order accepted, e.g.\n" +
-			"  sweetrpg-catalog link volume \"Dungeon World\" publisher \"Evil Hat Productions\"\n\n" +
+			"  sweetrpg catalog link volume \"Dungeon World\" publisher \"Evil Hat Productions\"\n\n" +
 			"Supported pairs: volume-publisher, volume-studio, volume-system, volume-person.\n" +
 			"Person links take --role and are stored as contribution records.",
 		Args: cobra.ExactArgs(4),

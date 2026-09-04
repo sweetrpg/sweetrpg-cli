@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
-	"github.com/sweetrpg/catalog-cli/internal/auth"
+	"github.com/sweetrpg/sweetrpg-cli/internal/auth"
 )
 
 // ExitCoder lets subcommands pick their process exit code. Auth failures are

@@ -3,7 +3,7 @@ package cmd
 import (
 	"strings"
 
-	"github.com/sweetrpg/catalog-cli/internal/client"
+	"github.com/sweetrpg/sweetrpg-cli/internal/client"
 	"github.com/sweetrpg/catalog-objects.go/vo"
 	modelcore "github.com/sweetrpg/model-core.go/vo"
 )

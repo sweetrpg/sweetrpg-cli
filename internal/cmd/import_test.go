@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sweetrpg/catalog-cli/internal/dtrpg"
+	"github.com/sweetrpg/sweetrpg-cli/internal/dtrpg"
 )
 
 // dtrpgAuthServer stands in for the DriveThruRPG auth_key endpoint so

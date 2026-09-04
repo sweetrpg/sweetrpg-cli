@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for considering a contribution to `catalog-cli`.
+Thanks for considering a contribution to `sweetrpg-cli`.
 
 ## Branching
 

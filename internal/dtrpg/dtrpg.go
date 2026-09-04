@@ -10,7 +10,7 @@ package dtrpg
 const (
 	// KeychainService matches auth.ServiceName. Duplicated as an untyped
 	// constant to avoid importing internal/auth from here.
-	KeychainService = "sweetrpg-catalog-cli"
+	KeychainService = "sweetrpg-cli"
 	// KeychainAccount is the slot holding the DriveThruRPG application key.
 	KeychainAccount = "dtrpg-app-key"
 )

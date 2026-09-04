@@ -13,8 +13,8 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
-	"github.com/sweetrpg/catalog-cli/internal/auth"
-	"github.com/sweetrpg/catalog-cli/internal/client"
+	"github.com/sweetrpg/sweetrpg-cli/internal/auth"
+	"github.com/sweetrpg/sweetrpg-cli/internal/client"
 )
 
 func runCaptured(t *testing.T, fn func()) string {
@@ -147,7 +147,7 @@ func TestExecuteSwallowsCurlSentinel(t *testing.T) {
 	auth.Domain, auth.ClientID, auth.Audience = "", "", ""
 	t.Cleanup(func() { auth.Domain, auth.ClientID, auth.Audience = oldDomain, oldClientID, oldAudience })
 	resetResolveState(t)
-	rootCmd.SetArgs([]string{"--api-url", "http://127.0.0.1:9", "--yes", "--curl", "view", "publisher", "507f1f77bcf86cd799439011"})
+	rootCmd.SetArgs([]string{"--api-url", "http://127.0.0.1:9", "--yes", "--curl", "catalog", "view", "publisher", "507f1f77bcf86cd799439011"})
 	t.Cleanup(func() { rootCmd.SetArgs(nil); _ = rootCmd.PersistentFlags().Set("curl", "false") })
 
 	// Nothing may reach stderr: no "Error:" line, no usage dump.

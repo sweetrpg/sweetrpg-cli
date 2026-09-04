@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sweetrpg/catalog-cli/internal/client"
+	"github.com/sweetrpg/sweetrpg-cli/internal/client"
 )
 
 const coverVolumeID = "aaaaaaaaaaaaaaaaaaaaaaaa"

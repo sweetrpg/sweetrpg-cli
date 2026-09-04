@@ -25,16 +25,15 @@ func writeFile(t *testing.T, content string) func() (string, error) {
 	return func() (string, error) { return dir, nil }
 }
 
-const fileWithBoth = "api-url: https://file.example.com\noutput: json\n"
+const fileWithBoth = "services:\n  catalog: https://file.example.com\noutput: json\n"
 
-func TestLoadPrecedence(t *testing.T) {
+func TestServiceURLPrecedence(t *testing.T) {
 	tests := []struct {
 		name      string
 		flag      string
 		env       string
 		fileBody  string
 		wantURL   string
-		wantOut   string
 		wantError string
 	}{
 		{
@@ -43,40 +42,36 @@ func TestLoadPrecedence(t *testing.T) {
 			env:      "https://env.example.com",
 			fileBody: fileWithBoth,
 			wantURL:  "https://flag.example.com",
-			wantOut:  "json",
 		},
 		{
 			name:     "env wins over file",
 			env:      "https://env.example.com",
 			fileBody: fileWithBoth,
 			wantURL:  "https://env.example.com",
-			wantOut:  "json",
 		},
 		{
 			name:     "file provides URL",
 			fileBody: fileWithBoth,
 			wantURL:  "https://file.example.com",
-			wantOut:  "json",
 		},
 		{
 			name:    "missing file is not an error when env set",
 			env:     "https://env.example.com",
 			wantURL: "https://env.example.com",
-			wantOut: DefaultOutputFormat,
 		},
 		{
 			name:      "nothing set names all three sources",
-			wantError: "--api-url, export SWEETRPG_CATALOG_API_URL, or set api-url",
+			wantError: "--api-url, export SWEETRPG_CATALOG_API_URL, or set services.catalog",
 		},
 		{
 			name:      "blank values treated as unset",
 			flag:      "   ",
-			fileBody:  "api-url: \"\"\n",
+			fileBody:  "services:\n  catalog: \"\"\n",
 			wantError: "no catalog API base URL configured",
 		},
 		{
 			name:      "invalid yaml is reported with path context",
-			fileBody:  "api-url: [unclosed\n",
+			fileBody:  "services: [unclosed\n",
 			wantError: "parsing config file",
 		},
 		{
@@ -95,8 +90,15 @@ func TestLoadPrecedence(t *testing.T) {
 			home := writeFile(t, tt.fileBody)
 			getenv := func(string) string { return tt.env }
 
-			cfg, err := Load(Sources{FlagAPIURL: tt.flag, Getenv: getenv, HomeDir: home})
+			cfg, err := Load(Sources{Getenv: getenv, HomeDir: home})
+			if err != nil {
+				if tt.wantError != "" && strings.Contains(err.Error(), tt.wantError) {
+					return
+				}
+				t.Fatalf("unexpected Load error: %v", err)
+			}
 
+			gotURL, err := cfg.ServiceURL(getenv, tt.flag, "catalog")
 			if tt.wantError != "" {
 				if err == nil {
 					t.Fatalf("want error containing %q, got nil", tt.wantError)
@@ -109,32 +111,46 @@ func TestLoadPrecedence(t *testing.T) {
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
-			if cfg.APIURL != tt.wantURL {
-				t.Errorf("APIURL = %q, want %q", cfg.APIURL, tt.wantURL)
-			}
-			if cfg.Output != tt.wantOut {
-				t.Errorf("Output = %q, want %q", cfg.Output, tt.wantOut)
+			if gotURL != tt.wantURL {
+				t.Errorf("ServiceURL = %q, want %q", gotURL, tt.wantURL)
 			}
 		})
 	}
 }
 
-func TestLoadWithoutHomeDirectoryStillResolvesFromEnv(t *testing.T) {
-	cfg, err := Load(Sources{
-		Getenv:  func(string) string { return "https://env.example.com" },
-		HomeDir: noHome,
-	})
+func TestLoadOutputPrecedence(t *testing.T) {
+	home := writeFile(t, fileWithBoth)
+	cfg, err := Load(Sources{Getenv: func(string) string { return "" }, HomeDir: home})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if cfg.APIURL != "https://env.example.com" {
-		t.Errorf("APIURL = %q, want https://env.example.com", cfg.APIURL)
+	if cfg.Output != "json" {
+		t.Errorf("Output = %q, want json", cfg.Output)
 	}
 }
 
-func TestLoadUnsetURLErrorIncludesFilePath(t *testing.T) {
+func TestLoadWithoutHomeDirectoryStillResolvesFromEnv(t *testing.T) {
+	getenv := func(string) string { return "https://env.example.com" }
+	cfg, err := Load(Sources{Getenv: getenv, HomeDir: noHome})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	gotURL, err := cfg.ServiceURL(getenv, "", "catalog")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if gotURL != "https://env.example.com" {
+		t.Errorf("ServiceURL = %q, want https://env.example.com", gotURL)
+	}
+}
+
+func TestServiceURLUnsetErrorIncludesFilePath(t *testing.T) {
 	home := writeFile(t, "")
-	_, err := Load(Sources{Getenv: func(string) string { return "" }, HomeDir: home})
+	cfg, err := Load(Sources{Getenv: func(string) string { return "" }, HomeDir: home})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	_, err = cfg.ServiceURL(func(string) string { return "" }, "", "catalog")
 	if err == nil {
 		t.Fatal("want error for unset URL")
 	}
@@ -142,6 +158,51 @@ func TestLoadUnsetURLErrorIncludesFilePath(t *testing.T) {
 	if !strings.Contains(err.Error(), want) {
 		t.Errorf("error %q should mention %q", err.Error(), want)
 	}
+}
+
+func TestServiceURLForNonCatalogService(t *testing.T) {
+	fileBody := "services:\n  gameRoom: https://gr.file.example.com\n"
+	home := writeFile(t, fileBody)
+	cfg, err := Load(Sources{Getenv: func(string) string { return "" }, HomeDir: home})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	t.Run("resolves from file by camelCase key", func(t *testing.T) {
+		gotURL, err := cfg.ServiceURL(func(string) string { return "" }, "", "game-room")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if gotURL != "https://gr.file.example.com" {
+			t.Errorf("ServiceURL = %q, want https://gr.file.example.com", gotURL)
+		}
+	})
+
+	t.Run("resolves from SWEETRPG_GAME_ROOM_API_URL env var", func(t *testing.T) {
+		getenv := func(key string) string {
+			if key == "SWEETRPG_GAME_ROOM_API_URL" {
+				return "https://gr.env.example.com"
+			}
+			return ""
+		}
+		gotURL, err := cfg.ServiceURL(getenv, "", "game-room")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if gotURL != "https://gr.env.example.com" {
+			t.Errorf("ServiceURL = %q, want https://gr.env.example.com", gotURL)
+		}
+	})
+
+	t.Run("unconfigured service names all three sources", func(t *testing.T) {
+		_, err := cfg.ServiceURL(func(string) string { return "" }, "", "users")
+		if err == nil || !strings.Contains(err.Error(), "SWEETRPG_USERS_API_URL") {
+			t.Fatalf("want error naming SWEETRPG_USERS_API_URL, got %v", err)
+		}
+		if !strings.Contains(err.Error(), "services.users") {
+			t.Fatalf("want error naming services.users, got %v", err)
+		}
+	})
 }
 
 func TestAssetsWebURLResolution(t *testing.T) {
@@ -157,18 +218,18 @@ func TestAssetsWebURLResolution(t *testing.T) {
 			name:     "flag wins",
 			flag:     "https://a-flag.example.com",
 			env:      "https://a-env.example.com",
-			fileBody: "assets-web-url: https://a-file.example.com\napi-url: https://api.example.com\n",
+			fileBody: "assets-web-url: https://a-file.example.com\nservices:\n  catalog: https://api.example.com\n",
 			want:     "https://a-flag.example.com",
 		},
 		{
 			name:     "env wins over file",
 			env:      "https://a-env.example.com",
-			fileBody: "assets-web-url: https://a-file.example.com\napi-url: https://api.example.com\n",
+			fileBody: "assets-web-url: https://a-file.example.com\nservices:\n  catalog: https://api.example.com\n",
 			want:     "https://a-env.example.com",
 		},
 		{
 			name:     "file provides value",
-			fileBody: "assets-web-url:  https://a-file.example.com \napi-url: https://api.example.com\n",
+			fileBody: "assets-web-url:  https://a-file.example.com \nservices:\n  catalog: https://api.example.com\n",
 			want:     "https://a-file.example.com",
 		},
 		{
@@ -193,7 +254,6 @@ func TestAssetsWebURLResolution(t *testing.T) {
 			}
 
 			cfg, err := Load(Sources{
-				FlagAPIURL:       "https://api.example.com",
 				FlagAssetsWebURL: tt.flag,
 				Getenv:           getenv,
 				HomeDir:          home,

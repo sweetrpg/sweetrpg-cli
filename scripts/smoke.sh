@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # End-to-end smoke test for catalog-cli against a local stack (openspec
-# add-sweetrpg-catalog-cli task 6.2): login -> add -> link -> edit --cover ->
+# generalize-catalog-cli): login -> add -> link -> edit --cover ->
 # view --json -> delete.
 #
 # Prerequisites:
@@ -18,7 +18,7 @@ LOGIN_FIRST=0
 [ "${1:-}" = "-l" ] && LOGIN_FIRST=1
 
 cd "$(dirname "$0")/.."
-CLI=(go run ./cmd/sweetrpg-catalog)
+CLI=(go run ./cmd/sweetrpg catalog)
 
 fail() {
     printf 'smoke: FAIL: %s\n' "$1" >&2
