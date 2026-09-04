@@ -103,8 +103,8 @@ func (c *Config) ServiceURL(getenv func(string) string, flagOverride, service st
 	apiURL, err := c.serviceURL(getenv, flagOverride, service, serviceEnvVar(service))
 	if errors.Is(err, errServiceUnconfigured) {
 		return "", fmt.Errorf(
-			"no %s API base URL configured: pass --api-url, export %s, or set baseURL and services.%s in %s",
-			service, serviceEnvVar(service), serviceConfigKey(service), c.FilePath,
+			"no %s API base URL configured: pass --api-url, export %s, or set baseURL in %s (services.%s defaults to %s if not set)",
+			service, serviceEnvVar(service), c.FilePath, serviceConfigKey(service), defaultServicePath(service),
 		)
 	}
 	return apiURL, err
@@ -112,9 +112,11 @@ func (c *Config) ServiceURL(getenv func(string) string, flagOverride, service st
 
 // serviceURL is the shared resolver behind ServiceURL and Load's assets-web
 // handling: flagOverride/env are taken as full URLs, the config file entry
-// as a path joined onto BaseURL. Returns errServiceUnconfigured (wrapped)
-// when nothing at all is set, so callers can distinguish "unconfigured"
-// from "configured but invalid".
+// as a path joined onto BaseURL. A missing services.<service> entry falls
+// back to the standard path convention rather than erroring - the config
+// file only needs an override for a service that deviates from it. Returns
+// errServiceUnconfigured (wrapped) when BaseURL itself is unset and no
+// flag/env override was given either, since nothing can be resolved then.
 func (c *Config) serviceURL(getenv func(string) string, flagOverride, service, envVar string) (string, error) {
 	if full := firstNonEmpty(flagOverride, getenv(envVar)); full != "" {
 		if err := validateURL(service, full); err != nil {
@@ -123,18 +125,26 @@ func (c *Config) serviceURL(getenv func(string) string, flagOverride, service, e
 		return full, nil
 	}
 
-	path := c.Services[serviceConfigKey(service)]
-	if path == "" {
+	if c.BaseURL == "" {
 		return "", errServiceUnconfigured
 	}
-	if c.BaseURL == "" {
-		return "", fmt.Errorf("services.%s is set but no baseURL is configured in %s", serviceConfigKey(service), c.FilePath)
-	}
+	path := firstNonEmpty(c.Services[serviceConfigKey(service)], defaultServicePath(service))
 	full := strings.TrimRight(c.BaseURL, "/") + "/" + strings.TrimLeft(path, "/")
 	if err := validateURL(service, full); err != nil {
 		return "", err
 	}
 	return full, nil
+}
+
+// defaultServicePath is the standard path convention a service resolves to
+// when the config file doesn't override it: /api/0/<service> for platform
+// APIs (matches the platform's Ingress path-versioning convention), /assets
+// for assets-web (a shared-domain path, not a service package name).
+func defaultServicePath(service string) string {
+	if service == "assets-web" {
+		return "/assets"
+	}
+	return "/api/0/" + service
 }
 
 // serviceConfigKey converts a kebab-case service name to its camelCase

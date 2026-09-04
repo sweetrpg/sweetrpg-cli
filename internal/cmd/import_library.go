@@ -8,6 +8,7 @@ import (
 
 	"github.com/spf13/cobra"
 	vo "github.com/sweetrpg/catalog-objects.go/vo"
+	modelcore "github.com/sweetrpg/model-core.go/vo"
 	"github.com/sweetrpg/sweetrpg-cli/internal/auth"
 	"github.com/sweetrpg/sweetrpg-cli/internal/client"
 	"github.com/sweetrpg/sweetrpg-cli/internal/dtrpg"
@@ -17,6 +18,8 @@ var (
 	flagImportDryRun   bool
 	flagImportArchived bool
 	flagImportPageSize uint32
+	flagImportQuiet    bool
+	flagImportVerbose  bool
 
 	// requirePlatformSession is a seam so tests skip the keychain check.
 	requirePlatformSession = defaultRequirePlatformSession
@@ -31,6 +34,27 @@ var (
 // publisher scans. A personal library is a few hundred volumes, so this is a
 // handful of requests.
 const scanPageSize = 500
+
+// logNormal prints routine progress output (one line per volume processed,
+// plan samples, cover attach/skip detail) - suppressed only by --quiet.
+// Failures and the final summary counts are never gated by this; they print
+// regardless of --quiet.
+func logNormal(cmd *cobra.Command, format string, args ...any) {
+	if flagImportQuiet {
+		return
+	}
+	cmd.Printf(format, args...)
+}
+
+// logVerbose prints extra detail (DTRPG page fetch progress, publisher
+// resolution decisions, cover attach successes) - only with --verbose.
+// --verbose implies --quiet does not suppress it.
+func logVerbose(cmd *cobra.Command, format string, args ...any) {
+	if !flagImportVerbose {
+		return
+	}
+	cmd.Printf(format, args...)
+}
 
 // defaultRequirePlatformSession refuses the import (exit 3) when no platform
 // session is stored, before any DriveThruRPG call is made.
@@ -62,10 +86,14 @@ func runDTRPGLibrary(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
-	lib, err := session.FetchLibrary(ctx, flagImportPageSize)
+	logNormal(cmd, "Fetching DriveThruRPG library...\n")
+	lib, err := session.FetchLibrary(ctx, flagImportPageSize, func(page, fetched int) {
+		logVerbose(cmd, "  fetched page %d (%d products so far)\n", page, fetched)
+	})
 	if err != nil {
 		return fmt.Errorf("fetching DriveThruRPG library: %w", err)
 	}
+	logNormal(cmd, "Fetched %d products from DriveThruRPG.\n", len(lib.Products))
 	products := dtrpg.MapProducts(lib)
 
 	c, err := buildAPIClient()
@@ -147,7 +175,7 @@ type importSummary struct {
 }
 
 func executeImport(ctx context.Context, cmd *cobra.Command, c *client.Client, products []dtrpg.Product) importSummary {
-	resolver := newPublisherResolver(c)
+	resolver := newPublisherResolver(cmd, c)
 	assets, assetsErr := buildAssetsClient()
 	if assetsErr != nil {
 		cmd.Printf("  covers disabled: %v\n", assetsErr)
@@ -155,6 +183,8 @@ func executeImport(ctx context.Context, cmd *cobra.Command, c *client.Client, pr
 
 	var s importSummary
 	for _, prod := range products {
+		logNormal(cmd, "  processing %s...\n", prod.Title)
+
 		volumeID, err := importOne(ctx, c, resolver, prod)
 		if err != nil {
 			s.failed++
@@ -163,7 +193,7 @@ func executeImport(ctx context.Context, cmd *cobra.Command, c *client.Client, pr
 			continue
 		}
 		s.imported++
-		cmd.Printf("  imported %s\n", prod.Title)
+		logNormal(cmd, "  imported %s\n", prod.Title)
 
 		if assetsErr != nil {
 			s.coversSkipped++
@@ -171,6 +201,7 @@ func executeImport(ctx context.Context, cmd *cobra.Command, c *client.Client, pr
 		}
 		if attachCover(ctx, cmd, c, assets, volumeID, prod) {
 			s.coversAttached++
+			logVerbose(cmd, "  cover attached for %s\n", prod.Title)
 		} else {
 			s.coversSkipped++
 		}
@@ -190,8 +221,13 @@ func importOne(ctx context.Context, c *client.Client, resolver *publisherResolve
 		publisherID = id
 	}
 
-	volume := prod.Volume
-	created, err := client.Create[vo.VolumeVO](ctx, c, "volumes", &volume)
+	fields := client.VolumeCreateFields{
+		Title:       prod.Volume.Title,
+		Description: prod.Volume.Description,
+		Tags:        tagNames(prod.Volume.Tags),
+		Properties:  prod.Volume.Properties,
+	}
+	created, err := client.CreateVolume(ctx, c, fields)
 	if err != nil {
 		return "", err
 	}
@@ -203,17 +239,31 @@ func importOne(ctx context.Context, c *client.Client, resolver *publisherResolve
 	return created.ID, nil
 }
 
+// tagNames reduces DTRPG-mapped tags to the plain names POST /volumes and
+// PATCH /volumes/:id both expect on the wire; the {name,value} TagVO shape is
+// a read-side convenience only.
+func tagNames(tags []modelcore.TagVO) []string {
+	if len(tags) == 0 {
+		return nil
+	}
+	names := make([]string, len(tags))
+	for i, t := range tags {
+		names[i] = t.Name
+	}
+	return names
+}
+
 // attachCover fetches the product's cover from DriveThruRPG and stores it as
 // the volume's own asset. Any failure - no cover, fetch error, upload error -
 // is a warning: the volume already imported successfully and stays imported.
 func attachCover(ctx context.Context, cmd *cobra.Command, c *client.Client, assets *client.AssetsClient, volumeID string, prod dtrpg.Product) bool {
 	cover, err := fetchCover(ctx, prod.CoverURL)
 	if err != nil {
-		cmd.Printf("  cover skipped for %s: %v\n", prod.Title, err)
+		logNormal(cmd, "  cover skipped for %s: %v\n", prod.Title, err)
 		return false
 	}
 	if _, _, err := client.SetVolumeCover(ctx, c, assets, volumeID, cover.Data, cover.ContentType); err != nil {
-		cmd.Printf("  cover skipped for %s: %v\n", prod.Title, err)
+		logNormal(cmd, "  cover skipped for %s: %v\n", prod.Title, err)
 		return false
 	}
 	return true
@@ -224,12 +274,13 @@ func attachCover(ctx context.Context, cmd *cobra.Command, c *client.Client, asse
 // first miss for a name.
 type publisherResolver struct {
 	c      *client.Client
+	cmd    *cobra.Command
 	byName map[string]string
 	loaded bool
 }
 
-func newPublisherResolver(c *client.Client) *publisherResolver {
-	return &publisherResolver{c: c, byName: map[string]string{}}
+func newPublisherResolver(cmd *cobra.Command, c *client.Client) *publisherResolver {
+	return &publisherResolver{c: c, cmd: cmd, byName: map[string]string{}}
 }
 
 func (r *publisherResolver) load(ctx context.Context) error {
@@ -260,6 +311,7 @@ func (r *publisherResolver) resolve(ctx context.Context, name string) (string, e
 	}
 	key := strings.ToLower(strings.TrimSpace(name))
 	if id, ok := r.byName[key]; ok {
+		logVerbose(r.cmd, "  publisher %q resolved to existing record %s\n", name, id)
 		return id, nil
 	}
 	created, err := client.Create[vo.PublisherVO](ctx, r.c, "publishers", &vo.PublisherVO{Name: name})
@@ -267,6 +319,7 @@ func (r *publisherResolver) resolve(ctx context.Context, name string) (string, e
 		return "", err
 	}
 	r.byName[key] = created.ID
+	logVerbose(r.cmd, "  publisher %q created as new record %s\n", name, created.ID)
 	return created.ID, nil
 }
 
@@ -282,13 +335,13 @@ func printSample(cmd *cobra.Command, label string, products []dtrpg.Product) {
 	if len(products) == 0 {
 		return
 	}
-	cmd.Printf("  %s:\n", label)
+	logNormal(cmd, "  %s:\n", label)
 	for i, p := range products {
 		if i == max {
-			cmd.Printf("    ... and %d more\n", len(products)-max)
+			logNormal(cmd, "    ... and %d more\n", len(products)-max)
 			break
 		}
-		cmd.Printf("    - %s\n", p.Title)
+		logNormal(cmd, "    - %s\n", p.Title)
 	}
 }
 

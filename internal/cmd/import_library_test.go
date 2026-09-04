@@ -26,6 +26,7 @@ type catalogStub struct {
 	patches        int
 	nextID         int
 	linkedPubIDs   []string
+	lastVolumeBody []byte
 }
 
 func (s *catalogStub) handler() http.HandlerFunc {
@@ -47,6 +48,7 @@ func (s *catalogStub) handler() http.HandlerFunc {
 				`{"data":{"type":"publisher","id":"pub-%d","attributes":{}}}`, s.nextID))
 		case r.Method == http.MethodPost && r.URL.Path == "/volumes":
 			s.volumePOSTs++
+			s.lastVolumeBody = body
 			if s.failVolumeName != "" && strings.Contains(string(body), `"title":"`+s.failVolumeName+`"`) {
 				w.WriteHeader(http.StatusInternalServerError)
 				_, _ = io.WriteString(w, `{"message":"volume rejected"}`)
@@ -131,9 +133,12 @@ func setupImportLibrary(t *testing.T, stub *catalogStub, dtrpgSrv *httptest.Serv
 	withImportSeams(t, store, dtrpgSrv.URL)
 
 	oldDry, oldArch, oldPage := flagImportDryRun, flagImportArchived, flagImportPageSize
+	oldQuiet, oldVerbose := flagImportQuiet, flagImportVerbose
 	flagImportDryRun, flagImportArchived, flagImportPageSize = false, false, 0
+	flagImportQuiet, flagImportVerbose = false, false
 	t.Cleanup(func() {
 		flagImportDryRun, flagImportArchived, flagImportPageSize = oldDry, oldArch, oldPage
+		flagImportQuiet, flagImportVerbose = oldQuiet, oldVerbose
 	})
 }
 
@@ -173,6 +178,11 @@ func TestDTRPGLibraryImportsFreshProducts(t *testing.T) {
 	}
 	if !strings.Contains(out, "2 imported") {
 		t.Errorf("summary missing count:\n%s", out)
+	}
+	// catalog-api's POST /volumes takes tags as plain strings, matching PATCH -
+	// not the {name,value} TagVO shape GET/list responses return.
+	if !strings.Contains(string(stub.lastVolumeBody), `"tags":["Fantasy"]`) {
+		t.Errorf("volume create body has wrong tags shape: %s", stub.lastVolumeBody)
 	}
 }
 
@@ -285,5 +295,65 @@ func TestDTRPGLibraryMissingKeyExitsNonZero(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "sweetrpg dtrpg login") {
 		t.Errorf("error should direct to login: %v", err)
+	}
+}
+
+func TestDTRPGLibraryQuietSuppressesNormalOutputButNotFailures(t *testing.T) {
+	stub := &catalogStub{failVolumeName: "Boom"}
+	srv := dtrpgLibraryServer(t,
+		dtrpgProductJSON(1, "Alpha", "", 0),
+		dtrpgProductJSON(2, "Boom", "", 0))
+	setupImportLibrary(t, stub, srv, true)
+	flagImportQuiet = true
+
+	out, err := runImportChild(t, "library")
+	if exitCodeOf(t, err) != 1 {
+		t.Fatalf("want exit 1, got %v", err)
+	}
+	for _, unwanted := range []string{"processing Alpha", "imported Alpha", "Fetching DriveThruRPG", "to import:"} {
+		if strings.Contains(out, unwanted) {
+			t.Errorf("--quiet output should not contain %q:\n%s", unwanted, out)
+		}
+	}
+	if !strings.Contains(out, "failed") || !strings.Contains(out, "Boom") {
+		t.Errorf("--quiet must still report failures:\n%s", out)
+	}
+	if !strings.Contains(out, "Done:") {
+		t.Errorf("--quiet must still print the final summary:\n%s", out)
+	}
+}
+
+func TestDTRPGLibraryVerboseAddsDetail(t *testing.T) {
+	stub := &catalogStub{}
+	srv := dtrpgLibraryServer(t, dtrpgProductJSON(1, "Fate Core", "Evil Hat Productions", 0))
+	setupImportLibrary(t, stub, srv, true)
+	flagImportVerbose = true
+
+	out, err := runImportChild(t, "library")
+	if err != nil {
+		t.Fatalf("import: %v", err)
+	}
+	for _, wanted := range []string{"fetched page 1", `publisher "Evil Hat Productions" created`} {
+		if !strings.Contains(out, wanted) {
+			t.Errorf("--verbose output missing %q:\n%s", wanted, out)
+		}
+	}
+}
+
+func TestDTRPGLibraryDefaultLogsOneLinePerVolume(t *testing.T) {
+	stub := &catalogStub{}
+	srv := dtrpgLibraryServer(t,
+		dtrpgProductJSON(1, "Alpha", "", 0),
+		dtrpgProductJSON(2, "Beta", "", 0))
+	setupImportLibrary(t, stub, srv, true)
+
+	out, err := runImportChild(t, "library")
+	if err != nil {
+		t.Fatalf("import: %v", err)
+	}
+	for _, title := range []string{"Alpha", "Beta"} {
+		if !strings.Contains(out, "imported "+title) {
+			t.Errorf("default output missing a per-volume line for %q:\n%s", title, out)
+		}
 	}
 }
