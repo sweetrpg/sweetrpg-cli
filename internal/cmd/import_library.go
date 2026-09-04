@@ -7,10 +7,10 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+	vo "github.com/sweetrpg/catalog-objects.go/vo"
 	"github.com/sweetrpg/sweetrpg-cli/internal/auth"
 	"github.com/sweetrpg/sweetrpg-cli/internal/client"
 	"github.com/sweetrpg/sweetrpg-cli/internal/dtrpg"
-	vo "github.com/sweetrpg/catalog-objects.go/vo"
 )
 
 var (

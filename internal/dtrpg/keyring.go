@@ -18,20 +18,31 @@ type KeyStore interface {
 	DeleteKey() error
 }
 
-// KeyringStore persists the key in the OS keychain via go-keyring.
-type KeyringStore struct{}
+// KeyringStore persists the key in the OS keychain via go-keyring. The zero
+// value uses KeychainAccount (the catalog import's slot); set Account to use
+// a different slot, e.g. GameRoomKeychainAccount.
+type KeyringStore struct {
+	Account string
+}
 
 var _ KeyStore = KeyringStore{}
 
-func (KeyringStore) SaveKey(key string) error {
+func (k KeyringStore) account() string {
+	if k.Account != "" {
+		return k.Account
+	}
+	return KeychainAccount
+}
+
+func (k KeyringStore) SaveKey(key string) error {
 	if key == "" {
 		return errors.New("refusing to store an empty DriveThruRPG key")
 	}
-	return keyring.Set(KeychainService, KeychainAccount, key)
+	return keyring.Set(KeychainService, k.account(), key)
 }
 
-func (KeyringStore) LoadKey() (string, error) {
-	key, err := keyring.Get(KeychainService, KeychainAccount)
+func (k KeyringStore) LoadKey() (string, error) {
+	key, err := keyring.Get(KeychainService, k.account())
 	if errors.Is(err, keyring.ErrNotFound) {
 		return "", ErrNoKey
 	}
@@ -41,8 +52,8 @@ func (KeyringStore) LoadKey() (string, error) {
 	return key, nil
 }
 
-func (KeyringStore) DeleteKey() error {
-	err := keyring.Delete(KeychainService, KeychainAccount)
+func (k KeyringStore) DeleteKey() error {
+	err := keyring.Delete(KeychainService, k.account())
 	if errors.Is(err, keyring.ErrNotFound) {
 		return nil // idempotent logout
 	}

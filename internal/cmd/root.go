@@ -57,6 +57,7 @@ func buildTree() {
 		catalogCmd.AddCommand(newImportCommand())
 		rootCmd.AddCommand(catalogCmd)
 		rootCmd.AddCommand(newAPICommand())
+		rootCmd.AddCommand(newGameRoomCommand())
 	})
 }
 

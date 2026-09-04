@@ -6,8 +6,8 @@ import (
 	"slices"
 
 	"github.com/spf13/cobra"
-	"github.com/sweetrpg/sweetrpg-cli/internal/client"
 	vo "github.com/sweetrpg/catalog-objects.go/vo"
+	"github.com/sweetrpg/sweetrpg-cli/internal/client"
 )
 
 // linkRule is one supported pairing, stored volume-first. Direct rules patch a

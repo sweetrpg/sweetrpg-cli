@@ -159,6 +159,35 @@ A per-product failure is isolated: the run continues, the failure is listed in t
 the command exits `1`. Missing platform session exits `3`; missing DriveThruRPG key exits `1`
 with a pointer to `catalog import dtrpg login`.
 
+## Populating your Game Room library from DriveThruRPG
+
+`game-room import dtrpg` matches your DriveThruRPG library against volumes already in the
+SweetRPG catalog and adds every match to your own Game Room library. It never creates a catalog
+record - a product with no matching catalog volume is skipped and reported, not imported. Use
+`catalog import dtrpg library` (an admin/editor tool, see above) to populate the shared catalog
+itself first.
+
+The DriveThruRPG key for this command is stored separately from the catalog import's, so logging
+in for one doesn't affect the other:
+
+```bash
+sweetrpg game-room import dtrpg login                 # paste a key from your DTRPG account settings
+sweetrpg game-room import dtrpg login --credentials   # or enter email + password to mint one
+```
+
+Run the match-and-add:
+
+```bash
+sweetrpg game-room import dtrpg --dry-run     # show what would be added, write nothing
+sweetrpg game-room import dtrpg               # add every matched volume to your library
+```
+
+Matching is by the `dtrpg_product_id` property the catalog import records on each volume. The
+completion summary reports counts of products added, already in your library, and skipped
+because no catalog volume matches yet (with their titles), so you understand why your full
+DriveThruRPG library may not fully populate your Game Room library. `game-room import dtrpg
+logout` deletes the stored key.
+
 ## `sweetrpg api`: generic authenticated requests
 
 For endpoints the typed `catalog` commands don't cover, `api` sends an authenticated request
