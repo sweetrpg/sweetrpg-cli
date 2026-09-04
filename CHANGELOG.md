@@ -2,6 +2,14 @@
 
 No changes yet.
 
+## 0.2.0 - 2026-09-04
+
+### Added
+- Default missing service config paths to the standard convention
+
+### Fixed
+- Send tags as plain strings on volume create; add --quiet/--verbose
+
 ## 0.1.0 - 2026-09-04
 
 ### Added
