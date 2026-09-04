@@ -5236,39 +5236,49 @@ type Library struct {
         Included []library.IncludedItem
 }
 
-// FetchLibrary pages through the authenticated user's order_products, archived
-// items included, requesting filter categories so tags can be mapped. Rate-limit
-// responses carrying Retry-After are waited out before retrying the same page.
+// FetchLibrary pages through the authenticated user's order_products,
+// requesting filter categories so tags can be mapped. Rate-limit responses
+// carrying Retry-After are waited out before retrying the same page.
+//
+// The archived query parameter is deliberately left unset. An earlier
+// version unconditionally passed archived=true on the (SDK-doc-comment)
+// assumption that it additively includes archived items alongside active
+// ones; against a real ~1700-title account that returned only 40 - evidently
+// an archived-only filter, not "everything". Leaving the parameter off
+// returns the account's full, unfiltered order_products, and each item's own
+// Archived field (already read downstream in mapping.go) still drives
+// per-product archived/active classification - no server-side filtering
+// needed for that at all.
+//
 // onPage, when non-nil, is called after each page is fetched with the page
 // number just retrieved and the running product total - callers use it for
 // progress output; pass nil to skip it.
-func (s *Session) FetchLibrary(ctx context.Context, pageSize uint32, onPage func(page int, fetched int)) (Library, error) <span class="cov5" title="2">{
+func (s *Session) FetchLibrary(ctx context.Context, pageSize uint32, onPage func(page int, fetched int)) (Library, error) <span class="cov7" title="3">{
         var out Library
         yes := true
         page := uint32(1)
 
-        for </span><span class="cov8" title="3">{
+        for </span><span class="cov8" title="4">{
                 params := library.LibraryItemsParams{
                         Page:       &amp;page,
                         GetFilters: &amp;yes,
-                        Archived:   &amp;yes,
                 }
-                if pageSize &gt; 0 </span><span class="cov5" title="2">{
+                if pageSize &gt; 0 </span><span class="cov4" title="2">{
                         params.PageSize = &amp;pageSize
                 }</span>
 
-                <span class="cov8" title="3">resp, err := s.listPageWithRetry(ctx, params)
+                <span class="cov8" title="4">resp, err := s.listPageWithRetry(ctx, params)
                 if err != nil </span><span class="cov0" title="0">{
                         return Library{}, err
                 }</span>
 
-                <span class="cov8" title="3">out.Products = append(out.Products, resp.Data...)
+                <span class="cov8" title="4">out.Products = append(out.Products, resp.Data...)
                 out.Included = append(out.Included, resp.Included...)
-                if onPage != nil </span><span class="cov5" title="2">{
+                if onPage != nil </span><span class="cov4" title="2">{
                         onPage(int(page), len(out.Products))
                 }</span>
 
-                <span class="cov8" title="3">if len(resp.Data) == 0 || resp.Links.Next == nil </span><span class="cov5" title="2">{
+                <span class="cov8" title="4">if len(resp.Data) == 0 || resp.Links.Next == nil </span><span class="cov7" title="3">{
                         return out, nil
                 }</span>
                 <span class="cov1" title="1">page++</span>
@@ -5277,10 +5287,10 @@ func (s *Session) FetchLibrary(ctx context.Context, pageSize uint32, onPage func
 
 // listPageWithRetry issues one ListOrderProducts call, retrying after the
 // server's Retry-After delay on rate-limit responses.
-func (s *Session) listPageWithRetry(ctx context.Context, params library.LibraryItemsParams) (library.OrderProductListResponse, error) <span class="cov8" title="3">{
-        for attempt := 0; ; attempt++ </span><span class="cov10" title="4">{
+func (s *Session) listPageWithRetry(ctx context.Context, params library.LibraryItemsParams) (library.OrderProductListResponse, error) <span class="cov8" title="4">{
+        for attempt := 0; ; attempt++ </span><span class="cov10" title="5">{
                 resp, err := s.lib.ListOrderProducts(ctx, params)
-                if err == nil </span><span class="cov8" title="3">{
+                if err == nil </span><span class="cov8" title="4">{
                         return resp, nil
                 }</span>
 
