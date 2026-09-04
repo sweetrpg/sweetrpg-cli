@@ -7,7 +7,7 @@ import (
 )
 
 // ErrNoKey means no DriveThruRPG application key is stored.
-var ErrNoKey = errors.New("no DriveThruRPG key stored: run 'sweetrpg catalog import dtrpg login'")
+var ErrNoKey = errors.New("no DriveThruRPG key stored: run 'sweetrpg dtrpg login'")
 
 // KeyStore persists the DriveThruRPG application key. The seam keeps commands
 // testable and lets a broken keychain surface as a clear refusal instead of a
@@ -18,31 +18,22 @@ type KeyStore interface {
 	DeleteKey() error
 }
 
-// KeyringStore persists the key in the OS keychain via go-keyring. The zero
-// value uses KeychainAccount (the catalog import's slot); set Account to use
-// a different slot, e.g. GameRoomKeychainAccount.
-type KeyringStore struct {
-	Account string
-}
+// KeyringStore persists the key in the OS keychain via go-keyring, under
+// KeychainAccount - the one slot shared by every consumer of the
+// DriveThruRPG login.
+type KeyringStore struct{}
 
 var _ KeyStore = KeyringStore{}
 
-func (k KeyringStore) account() string {
-	if k.Account != "" {
-		return k.Account
-	}
-	return KeychainAccount
-}
-
-func (k KeyringStore) SaveKey(key string) error {
+func (KeyringStore) SaveKey(key string) error {
 	if key == "" {
 		return errors.New("refusing to store an empty DriveThruRPG key")
 	}
-	return keyring.Set(KeychainService, k.account(), key)
+	return keyring.Set(KeychainService, KeychainAccount, key)
 }
 
-func (k KeyringStore) LoadKey() (string, error) {
-	key, err := keyring.Get(KeychainService, k.account())
+func (KeyringStore) LoadKey() (string, error) {
+	key, err := keyring.Get(KeychainService, KeychainAccount)
 	if errors.Is(err, keyring.ErrNotFound) {
 		return "", ErrNoKey
 	}
@@ -52,8 +43,8 @@ func (k KeyringStore) LoadKey() (string, error) {
 	return key, nil
 }
 
-func (k KeyringStore) DeleteKey() error {
-	err := keyring.Delete(KeychainService, k.account())
+func (KeyringStore) DeleteKey() error {
+	err := keyring.Delete(KeychainService, KeychainAccount)
 	if errors.Is(err, keyring.ErrNotFound) {
 		return nil // idempotent logout
 	}

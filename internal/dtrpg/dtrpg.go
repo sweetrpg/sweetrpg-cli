@@ -6,18 +6,16 @@ package dtrpg
 
 // Keychain identifiers. The service name is shared with the platform session
 // store; the account keeps the DriveThruRPG key in its own slot so `auth
-// logout` and `import dtrpg logout` never touch each other's credentials.
+// logout` and `dtrpg logout` never touch each other's credentials. One
+// DriveThruRPG login is shared by every consumer (`catalog import dtrpg
+// library`, `game-room import dtrpg`) - it's one external account either
+// way, so there's nothing to isolate between them.
 const (
 	// KeychainService matches auth.ServiceName. Duplicated as an untyped
 	// constant to avoid importing internal/auth from here.
 	KeychainService = "sweetrpg-cli"
-	// KeychainAccount is the slot holding the catalog import's DriveThruRPG
-	// application key.
+	// KeychainAccount is the slot holding the DriveThruRPG application key.
 	KeychainAccount = "dtrpg-app-key"
-	// GameRoomKeychainAccount is the distinct slot for `game-room import
-	// dtrpg`'s key, so it never shares credential state with the catalog
-	// import even though both drive the same DriveThruRPG account.
-	GameRoomKeychainAccount = "dtrpg-app-key-game-room"
 )
 
 // Volume property names carrying DriveThruRPG provenance. dtrpg_product_id is

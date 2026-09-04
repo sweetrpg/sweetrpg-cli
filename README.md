@@ -129,25 +129,29 @@ flags. Uploads require a session and an assets-web base URL (`--assets-web-url` 
 `SWEETRPG_ASSETS_WEB_URL` env var, or `services.assetsWeb` in the config file); they talk to
 assets-web directly, so a `--curl` run previews the linking PATCH but not the upload itself.
 
-## Importing a DriveThruRPG library into the catalog
+## DriveThruRPG login
 
-`catalog import dtrpg` bulk-loads the volumes in your DriveThruRPG library into the catalog. It
-drives the same `POST /volumes` and `POST /publishers` endpoints as `catalog add`, so imported
-records land as submitted versions for normal review.
-
-Store a DriveThruRPG application key once per machine:
+`sweetrpg dtrpg login`/`sweetrpg dtrpg logout` manage one DriveThruRPG application key, shared by
+every command that imports from your DriveThruRPG library (`catalog import dtrpg library`,
+`game-room import dtrpg`). It's one external account either way, so there's one login:
 
 ```bash
-sweetrpg catalog import dtrpg login                 # paste a key from your DTRPG account settings
-sweetrpg catalog import dtrpg login --credentials   # or enter email + password to mint one
+sweetrpg dtrpg login                 # paste a key from your DTRPG account settings
+sweetrpg dtrpg login --credentials   # or enter email + password to mint one
 ```
 
 The key is kept in the OS keychain under service `sweetrpg-cli`, account
 `dtrpg-app-key` - separate from the platform session. It is exchanged for a short-lived session
 on every run; the session token is never written to disk. Passwords are read at a masked prompt
-and discarded after the exchange. `catalog import dtrpg logout` deletes the stored key.
+and discarded after the exchange. `sweetrpg dtrpg logout` deletes the stored key.
 
-Run the import (requires both a platform login and a stored DriveThruRPG key):
+## Importing a DriveThruRPG library into the catalog
+
+`catalog import dtrpg library` bulk-loads the volumes in your DriveThruRPG library into the
+catalog. It drives the same `POST /volumes` and `POST /publishers` endpoints as `catalog add`, so
+imported records land as submitted versions for normal review.
+
+Run the import (requires both a platform login and `sweetrpg dtrpg login`):
 
 ```bash
 sweetrpg catalog import dtrpg library --dry-run     # show the plan, write nothing
@@ -180,7 +184,7 @@ Flags:
 
 A per-product failure is isolated: the run continues, the failure is listed in the summary, and
 the command exits `1`. Missing platform session exits `3`; missing DriveThruRPG key exits `1`
-with a pointer to `catalog import dtrpg login`.
+with a pointer to `sweetrpg dtrpg login`.
 
 ## Populating your Game Room library from DriveThruRPG
 
@@ -188,15 +192,8 @@ with a pointer to `catalog import dtrpg login`.
 SweetRPG catalog and adds every match to your own Game Room library. It never creates a catalog
 record - a product with no matching catalog volume is skipped and reported, not imported. Use
 `catalog import dtrpg library` (an admin/editor tool, see above) to populate the shared catalog
-itself first.
-
-The DriveThruRPG key for this command is stored separately from the catalog import's, so logging
-in for one doesn't affect the other:
-
-```bash
-sweetrpg game-room import dtrpg login                 # paste a key from your DTRPG account settings
-sweetrpg game-room import dtrpg login --credentials   # or enter email + password to mint one
-```
+itself first. Uses the same DriveThruRPG login as the catalog import - run `sweetrpg dtrpg login`
+once and both commands can use it.
 
 Run the match-and-add:
 

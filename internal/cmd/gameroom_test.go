@@ -31,42 +31,6 @@ func runGameRoomImportChild(t *testing.T, name string, args ...string) (string, 
 	return out.String(), err
 }
 
-func TestGameRoomDTRPGLoginUsesItsOwnKeychainAccount(t *testing.T) {
-	auth := dtrpgAuthServer(t, http.StatusOK)
-	catalogStore := &dtrpg.MemoryKeyStore{}
-	gameRoomStore := &dtrpg.MemoryKeyStore{}
-	withImportSeams(t, catalogStore, auth.URL)
-	oldGameRoomStore := gameRoomKeyStore
-	gameRoomKeyStore = func() dtrpg.KeyStore { return gameRoomStore }
-	t.Cleanup(func() { gameRoomKeyStore = oldGameRoomStore })
-	promptSecret = func(string) (string, error) { return "gr-key", nil }
-
-	if _, err := runGameRoomImportChild(t, "login"); err != nil {
-		t.Fatalf("login: %v", err)
-	}
-	if got, _ := gameRoomStore.LoadKey(); got != "gr-key" {
-		t.Fatalf("game-room store key = %q, want gr-key", got)
-	}
-	if _, err := catalogStore.LoadKey(); err == nil {
-		t.Error("catalog import's key store should be untouched by the game-room login")
-	}
-}
-
-func TestGameRoomDTRPGLogoutIsIdempotent(t *testing.T) {
-	store := &dtrpg.MemoryKeyStore{}
-	_ = store.SaveKey("k")
-	oldGameRoomStore := gameRoomKeyStore
-	gameRoomKeyStore = func() dtrpg.KeyStore { return store }
-	t.Cleanup(func() { gameRoomKeyStore = oldGameRoomStore })
-
-	if _, err := runGameRoomImportChild(t, "logout"); err != nil {
-		t.Fatalf("logout with key: %v", err)
-	}
-	if _, err := runGameRoomImportChild(t, "logout"); err != nil {
-		t.Fatalf("logout without key must be a no-op, got %v", err)
-	}
-}
-
 // gameRoomStub records POSTs to /library/entries and serves a scripted
 // current library for GET /library.
 type gameRoomStub struct {
@@ -149,9 +113,9 @@ func setupGameRoomImport(t *testing.T, gr *gameRoomStub, catalogJSON string, dtr
 
 	store := &dtrpg.MemoryKeyStore{}
 	_ = store.SaveKey("app-key")
-	oldGameRoomStore := gameRoomKeyStore
-	gameRoomKeyStore = func() dtrpg.KeyStore { return store }
-	t.Cleanup(func() { gameRoomKeyStore = oldGameRoomStore })
+	oldStore := dtrpgKeyStore
+	dtrpgKeyStore = func() dtrpg.KeyStore { return store }
+	t.Cleanup(func() { dtrpgKeyStore = oldStore })
 
 	oldBase := dtrpgLoginBase
 	dtrpgLoginBase = dtrpgSrv.URL

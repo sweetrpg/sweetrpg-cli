@@ -283,7 +283,7 @@ func TestDTRPGLibraryMissingKeyExitsNonZero(t *testing.T) {
 	if err == nil || exitCodeOf(t, err) == 0 {
 		t.Fatalf("want non-zero exit on missing key, got %v", err)
 	}
-	if !strings.Contains(err.Error(), "import dtrpg login") {
+	if !strings.Contains(err.Error(), "sweetrpg dtrpg login") {
 		t.Errorf("error should direct to login: %v", err)
 	}
 }

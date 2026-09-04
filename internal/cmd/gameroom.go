@@ -17,13 +17,7 @@ import (
 )
 
 var (
-	flagGameRoomImportDryRun     bool
-	flagGameRoomDTRPGCredentials bool
-
-	// gameRoomKeyStore is a test seam, mirroring dtrpgKeyStore but bound to
-	// the game-room import's own keychain account so it never shares
-	// credential state with the catalog import.
-	gameRoomKeyStore = func() dtrpg.KeyStore { return dtrpg.KeyringStore{Account: dtrpg.GameRoomKeychainAccount} }
+	flagGameRoomImportDryRun bool
 
 	// gameRoomHTTPClient is a test seam for the raw game-room-api calls
 	// below (no typed client exists for game-room-api in this repo yet).
@@ -34,12 +28,13 @@ var (
 	platformSessionLoad = func() (*auth.Session, error) { return (auth.KeyringStore{}).Load() }
 )
 
-// gameRoomImportChildren mirrors importChildren: subcommands kept here so
-// tests can drive them directly.
+// gameRoomImportChildren mirrors importChildren: kept here so tests can
+// drive the command directly.
 var gameRoomImportChildren = map[string]*cobra.Command{}
 
 // newGameRoomCommand builds the game-room namespace. Only the DriveThruRPG
-// import lives here today.
+// import lives here today; it shares the top-level `dtrpg login` credential
+// with `catalog import dtrpg library` rather than keeping its own.
 func newGameRoomCommand() *cobra.Command {
 	gr := &cobra.Command{
 		Use:   "game-room",
@@ -55,87 +50,18 @@ func newGameRoomCommand() *cobra.Command {
 		Long: "Match your DriveThruRPG library against volumes already in the SweetRPG catalog\n" +
 			"and add every match to your own Game Room library. Never creates a catalog\n" +
 			"record - a product with no matching volume is skipped and reported, not\n" +
-			"imported.",
+			"imported. Uses the DriveThruRPG login stored by `sweetrpg dtrpg login`.",
 		Args: cobra.NoArgs,
 		RunE: runGameRoomImportDTRPG,
 	}
 	dtrpgCmd.Flags().BoolVar(&flagGameRoomImportDryRun, "dry-run", false,
 		"fetch and match without adding any library entry")
 
-	login := &cobra.Command{
-		Use:   "login",
-		Short: "Store a DriveThruRPG application key for the Game Room import",
-		Args:  cobra.NoArgs,
-		RunE:  runGameRoomDTRPGLogin,
-	}
-	login.Flags().BoolVar(&flagGameRoomDTRPGCredentials, "credentials", false,
-		"prompt for DriveThruRPG email and password and mint an application key instead of pasting one")
-
-	logout := &cobra.Command{
-		Use:   "logout",
-		Short: "Delete the stored DriveThruRPG application key for the Game Room import",
-		Args:  cobra.NoArgs,
-		RunE:  runGameRoomDTRPGLogout,
-	}
-
-	dtrpgCmd.AddCommand(login, logout)
 	imp.AddCommand(dtrpgCmd)
 	gr.AddCommand(imp)
 
 	gameRoomImportChildren["dtrpg"] = dtrpgCmd
-	gameRoomImportChildren["login"] = login
-	gameRoomImportChildren["logout"] = logout
 	return gr
-}
-
-func runGameRoomDTRPGLogin(cmd *cobra.Command, _ []string) error {
-	ctx := cmd.Context()
-
-	appKey, err := obtainGameRoomAppKey(ctx)
-	if err != nil {
-		return err
-	}
-	appKey = strings.TrimSpace(appKey)
-	if appKey == "" {
-		return usageErr("no DriveThruRPG application key provided")
-	}
-
-	// Validate before persisting: a bad key should never reach the keychain.
-	if _, err := buildDTRPGClient(ctx, appKey); err != nil {
-		return err
-	}
-	if err := gameRoomKeyStore().SaveKey(appKey); err != nil {
-		return fmt.Errorf("could not save the DriveThruRPG key to the OS keychain (%w); nothing was stored", err)
-	}
-	cmd.Println("Stored DriveThruRPG application key.")
-	return nil
-}
-
-func obtainGameRoomAppKey(ctx context.Context) (string, error) {
-	if !flagGameRoomDTRPGCredentials {
-		return promptSecret("DriveThruRPG application key")
-	}
-	email, err := promptLine("DriveThruRPG email")
-	if err != nil {
-		return "", err
-	}
-	password, err := promptSecret("DriveThruRPG password")
-	if err != nil {
-		return "", err
-	}
-	key, err := credentialLogin(ctx, strings.TrimSpace(email), password)
-	if err != nil {
-		return "", fmt.Errorf("credential login failed: %w", err)
-	}
-	return key, nil
-}
-
-func runGameRoomDTRPGLogout(cmd *cobra.Command, _ []string) error {
-	if err := gameRoomKeyStore().DeleteKey(); err != nil {
-		return err
-	}
-	cmd.Println("Removed the stored DriveThruRPG application key.")
-	return nil
 }
 
 // catalogVolumeMatch is the subset of a catalog volume the game-room import
@@ -254,7 +180,7 @@ func runGameRoomImportDTRPG(cmd *cobra.Command, _ []string) error {
 	}
 	userID := sess.Account
 
-	appKey, err := gameRoomKeyStore().LoadKey()
+	appKey, err := dtrpgKeyStore().LoadKey()
 	if err != nil {
 		return err
 	}
