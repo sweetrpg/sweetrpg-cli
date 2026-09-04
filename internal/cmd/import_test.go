@@ -152,3 +152,27 @@ type brokenKeyStore struct{}
 func (brokenKeyStore) SaveKey(string) error     { return errors.New("secret service unavailable") }
 func (brokenKeyStore) LoadKey() (string, error) { return "", dtrpg.ErrNoKey }
 func (brokenKeyStore) DeleteKey() error         { return nil }
+
+// TestImportDTRPGRelocatedUnderCatalog verifies the import command tree
+// resolves at `catalog import dtrpg ...`, not the old top-level `import
+// dtrpg ...` shape, without actually executing any subcommand (login/
+// logout/library all touch the keychain or network on a real run).
+func TestImportDTRPGRelocatedUnderCatalog(t *testing.T) {
+	buildTree()
+	for _, path := range [][]string{
+		{"catalog", "import", "dtrpg", "login"},
+		{"catalog", "import", "dtrpg", "logout"},
+		{"catalog", "import", "dtrpg", "library"},
+	} {
+		found, _, err := rootCmd.Find(path)
+		if err != nil {
+			t.Fatalf("Find(%v): %v", path, err)
+		}
+		if found.Name() != path[len(path)-1] {
+			t.Errorf("Find(%v) resolved to %q", path, found.Name())
+		}
+	}
+	if _, _, err := rootCmd.Find([]string{"import", "dtrpg", "login"}); err == nil {
+		t.Error("top-level `import dtrpg login` should no longer resolve")
+	}
+}
