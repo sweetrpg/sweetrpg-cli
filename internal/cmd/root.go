@@ -59,6 +59,8 @@ func buildTree() {
 		rootCmd.AddCommand(newAPICommand())
 		rootCmd.AddCommand(newGameRoomCommand())
 		rootCmd.AddCommand(newDTRPGCommand())
+		rootCmd.AddCommand(newVersionCommand())
+		rootCmd.Version = buildVersion()
 	})
 }
 
