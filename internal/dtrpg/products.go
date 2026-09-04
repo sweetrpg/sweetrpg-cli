@@ -33,9 +33,20 @@ type Library struct {
 	Included []library.IncludedItem
 }
 
-// FetchLibrary pages through the authenticated user's order_products, archived
-// items included, requesting filter categories so tags can be mapped. Rate-limit
-// responses carrying Retry-After are waited out before retrying the same page.
+// FetchLibrary pages through the authenticated user's order_products,
+// requesting filter categories so tags can be mapped. Rate-limit responses
+// carrying Retry-After are waited out before retrying the same page.
+//
+// The archived query parameter is deliberately left unset. An earlier
+// version unconditionally passed archived=true on the (SDK-doc-comment)
+// assumption that it additively includes archived items alongside active
+// ones; against a real ~1700-title account that returned only 40 - evidently
+// an archived-only filter, not "everything". Leaving the parameter off
+// returns the account's full, unfiltered order_products, and each item's own
+// Archived field (already read downstream in mapping.go) still drives
+// per-product archived/active classification - no server-side filtering
+// needed for that at all.
+//
 // onPage, when non-nil, is called after each page is fetched with the page
 // number just retrieved and the running product total - callers use it for
 // progress output; pass nil to skip it.
@@ -48,7 +59,6 @@ func (s *Session) FetchLibrary(ctx context.Context, pageSize uint32, onPage func
 		params := library.LibraryItemsParams{
 			Page:       &page,
 			GetFilters: &yes,
-			Archived:   &yes,
 		}
 		if pageSize > 0 {
 			params.PageSize = &pageSize
