@@ -100,6 +100,9 @@ Name arguments match case-insensitively and partially (exact matches win when bo
 hit); 24-hex IDs are used as-is. When a name matches several records an interactive picker
 lists each candidate's ID, or (with `--yes`) the command fails and prints the candidates.
 
+`catalog view volume` prints a viewable `coverURL` alongside a volume's own fields when it has a
+cover and `assets-web-url` is configured; `--json`/`--yaml` stay the server's raw representation.
+
 To see what a fuzzy query will hit before resolving, use `search`:
 
 ```bash

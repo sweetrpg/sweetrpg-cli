@@ -269,7 +269,13 @@ func newViewCommand() *cobra.Command {
 				if err != nil {
 					return writeErr(err)
 				}
-				return printRecord(cmd, rec, format)
+				if err := printRecord(cmd, rec, format); err != nil {
+					return err
+				}
+				if format == formatHuman {
+					printCoverURL(cmd, name, rec)
+				}
+				return nil
 			},
 		}
 		child.Flags().Bool("json", false, "emit raw JSON")
