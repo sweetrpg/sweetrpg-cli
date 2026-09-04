@@ -34,7 +34,10 @@ func TestFetchLibraryAggregatesAllPages(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	lib, err := testSession(srv.URL).FetchLibrary(context.Background(), 1)
+	var onPageCalls [][2]int
+	lib, err := testSession(srv.URL).FetchLibrary(context.Background(), 1, func(page, fetched int) {
+		onPageCalls = append(onPageCalls, [2]int{page, fetched})
+	})
 	if err != nil {
 		t.Fatalf("FetchLibrary: %v", err)
 	}
@@ -43,6 +46,9 @@ func TestFetchLibraryAggregatesAllPages(t *testing.T) {
 	}
 	if len(pages) != 2 || pages[0] != "1" || pages[1] != "2" {
 		t.Fatalf("requested pages = %v, want [1 2]", pages)
+	}
+	if want := [][2]int{{1, 1}, {2, 2}}; len(onPageCalls) != 2 || onPageCalls[0] != want[0] || onPageCalls[1] != want[1] {
+		t.Fatalf("onPage calls = %v, want %v", onPageCalls, want)
 	}
 }
 
@@ -66,7 +72,7 @@ func TestFetchLibraryHonorsRetryAfter(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	lib, err := testSession(srv.URL).FetchLibrary(context.Background(), 0)
+	lib, err := testSession(srv.URL).FetchLibrary(context.Background(), 0, nil)
 	if err != nil {
 		t.Fatalf("FetchLibrary: %v", err)
 	}
