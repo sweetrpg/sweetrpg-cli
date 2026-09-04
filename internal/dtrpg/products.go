@@ -36,7 +36,10 @@ type Library struct {
 // FetchLibrary pages through the authenticated user's order_products, archived
 // items included, requesting filter categories so tags can be mapped. Rate-limit
 // responses carrying Retry-After are waited out before retrying the same page.
-func (s *Session) FetchLibrary(ctx context.Context, pageSize uint32) (Library, error) {
+// onPage, when non-nil, is called after each page is fetched with the page
+// number just retrieved and the running product total - callers use it for
+// progress output; pass nil to skip it.
+func (s *Session) FetchLibrary(ctx context.Context, pageSize uint32, onPage func(page int, fetched int)) (Library, error) {
 	var out Library
 	yes := true
 	page := uint32(1)
@@ -58,6 +61,9 @@ func (s *Session) FetchLibrary(ctx context.Context, pageSize uint32) (Library, e
 
 		out.Products = append(out.Products, resp.Data...)
 		out.Included = append(out.Included, resp.Included...)
+		if onPage != nil {
+			onPage(int(page), len(out.Products))
+		}
 
 		if len(resp.Data) == 0 || resp.Links.Next == nil {
 			return out, nil

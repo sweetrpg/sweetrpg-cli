@@ -188,7 +188,7 @@ func runGameRoomImportDTRPG(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
-	lib, err := dtrpgSession.FetchLibrary(ctx, 0)
+	lib, err := dtrpgSession.FetchLibrary(ctx, 0, nil)
 	if err != nil {
 		return fmt.Errorf("fetching DriveThruRPG library: %w", err)
 	}
