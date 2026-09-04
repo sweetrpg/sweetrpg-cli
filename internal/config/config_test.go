@@ -86,7 +86,7 @@ func TestServiceURLPrecedence(t *testing.T) {
 		},
 		{
 			name:      "nothing set names all three sources",
-			wantError: "--api-url, export SWEETRPG_CATALOG_API_URL, or set baseURL and services.catalog",
+			wantError: "--api-url, export SWEETRPG_CATALOG_API_URL, or set baseURL",
 		},
 		{
 			name:      "blank values treated as unset",
@@ -95,9 +95,14 @@ func TestServiceURLPrecedence(t *testing.T) {
 			wantError: "no catalog API base URL configured",
 		},
 		{
-			name:      "service path set without baseURL is an error",
+			name:     "missing service path defaults to the standard convention",
+			fileBody: "baseURL: https://file.example.com\n",
+			wantURL:  "https://file.example.com/api/0/catalog",
+		},
+		{
+			name:      "service path set without baseURL is still an error",
 			fileBody:  "services:\n  catalog: /api/0/catalog\n",
-			wantError: "services.catalog is set but no baseURL is configured",
+			wantError: "no catalog API base URL configured",
 		},
 		{
 			name:      "invalid yaml is reported with path context",
@@ -224,13 +229,13 @@ func TestServiceURLForNonCatalogService(t *testing.T) {
 		}
 	})
 
-	t.Run("unconfigured service names all three sources", func(t *testing.T) {
-		_, err := cfg.ServiceURL(func(string) string { return "" }, "", "users")
-		if err == nil || !strings.Contains(err.Error(), "SWEETRPG_USERS_API_URL") {
-			t.Fatalf("want error naming SWEETRPG_USERS_API_URL, got %v", err)
+	t.Run("service with no override defaults to the standard path", func(t *testing.T) {
+		gotURL, err := cfg.ServiceURL(func(string) string { return "" }, "", "users")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
 		}
-		if !strings.Contains(err.Error(), "services.users") {
-			t.Fatalf("want error naming services.users, got %v", err)
+		if gotURL != "https://gr.file.example.com/api/0/users" {
+			t.Errorf("ServiceURL = %q, want https://gr.file.example.com/api/0/users", gotURL)
 		}
 	})
 }
@@ -263,9 +268,14 @@ func TestAssetsWebURLResolution(t *testing.T) {
 			want:     "https://api.example.com/assets",
 		},
 		{
-			name:     "absent is allowed - only asset commands need it",
-			fileBody: fileWithBoth,
+			name:     "no override, no baseURL - absent is allowed, only asset commands need it",
+			fileBody: "output: json\n",
 			want:     "",
+		},
+		{
+			name:     "no override but baseURL set defaults to the standard assets path",
+			fileBody: fileWithBoth,
+			want:     "https://file.example.com/assets",
 		},
 		{
 			name:      "invalid value rejected when set",

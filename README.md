@@ -27,9 +27,15 @@ Each service's base URL resolves in this order:
    `SWEETRPG_GAME_ROOM_API_URL`) - also a full URL
 3. `~/.config/sweetrpg/cli.yaml`'s `baseURL` plus a `services.<service>` path
 
-Example config file. Every service's base URL is `baseURL` joined with its own path under
-`services` - including `assetsWeb`, which isn't itself a platform API but is a network path like
-the rest:
+A service's path defaults to `/api/0/<service>` (`/assets` for `assetsWeb`) when
+`services.<service>` isn't set, so the config file only needs a `services` entry for a service
+whose path deviates from that convention:
+
+```yaml
+baseURL: https://dev.sweetrpg.com
+```
+
+is enough on its own; the longer form overrides specific paths:
 
 ```yaml
 baseURL: https://dev.sweetrpg.com
