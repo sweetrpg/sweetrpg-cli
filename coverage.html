@@ -4503,13 +4503,13 @@ type Sources struct {
 // Load resolves configuration by precedence: flag &gt; environment &gt; config file.
 // Per-service base URLs are validated lazily via Config.ServiceURL, not here,
 // since which services a given command run needs varies by command.
-func Load(s Sources) (*Config, error) <span class="cov7" title="21">{
+func Load(s Sources) (*Config, error) <span class="cov7" title="23">{
         file, err := loadFile(s.HomeDir)
         if err != nil </span><span class="cov1" title="1">{
                 return nil, err
         }</span>
 
-        <span class="cov7" title="20">cfg := &amp;Config{
+        <span class="cov7" title="22">cfg := &amp;Config{
                 Output:       file.Output,
                 BaseURL:      file.BaseURL,
                 Services:     file.Services,
@@ -4518,7 +4518,7 @@ func Load(s Sources) (*Config, error) <span class="cov7" title="21">{
                 AuthClientID: file.AuthTenant.ClientID,
                 AuthAudience: file.AuthTenant.Audience,
         }
-        if cfg.Output == "" </span><span class="cov6" title="14">{
+        if cfg.Output == "" </span><span class="cov6" title="15">{
                 cfg.Output = DefaultOutputFormat
         }</span>
 
@@ -4526,11 +4526,11 @@ func Load(s Sources) (*Config, error) <span class="cov7" title="21">{
         // only when something is set. "assets-web" isn't itself a platform API,
         // but resolves the same way (env/flag full URL, or a services.assetsWeb
         // path against baseURL) since it's a network base URL like the rest.
-        <span class="cov7" title="20">assetsWebURL, err := cfg.serviceURL(s.Getenv, s.FlagAssetsWebURL, "assets-web", "SWEETRPG_ASSETS_WEB_URL")
+        <span class="cov7" title="22">assetsWebURL, err := cfg.serviceURL(s.Getenv, s.FlagAssetsWebURL, "assets-web", "SWEETRPG_ASSETS_WEB_URL")
         if err != nil &amp;&amp; !errors.Is(err, errServiceUnconfigured) </span><span class="cov1" title="1">{
                 return nil, err
         }</span>
-        <span class="cov7" title="19">cfg.AssetsWebURL = assetsWebURL
+        <span class="cov7" title="21">cfg.AssetsWebURL = assetsWebURL
 
         return cfg, nil</span>
 }
@@ -4547,69 +4547,79 @@ var errServiceUnconfigured = errors.New("service not configured")
 // resolved against BaseURL. service is given in kebab-case (e.g.
 // "game-room"); the config file key is its camelCase form ("gameRoom").
 // SWEETRPG_CATALOG_API_URL is preserved as the env var name for "catalog".
-func (c *Config) ServiceURL(getenv func(string) string, flagOverride, service string) (string, error) <span class="cov6" title="14">{
+func (c *Config) ServiceURL(getenv func(string) string, flagOverride, service string) (string, error) <span class="cov6" title="15">{
         apiURL, err := c.serviceURL(getenv, flagOverride, service, serviceEnvVar(service))
-        if errors.Is(err, errServiceUnconfigured) </span><span class="cov4" title="4">{
+        if errors.Is(err, errServiceUnconfigured) </span><span class="cov3" title="4">{
                 return "", fmt.Errorf(
-                        "no %s API base URL configured: pass --api-url, export %s, or set baseURL and services.%s in %s",
-                        service, serviceEnvVar(service), serviceConfigKey(service), c.FilePath,
+                        "no %s API base URL configured: pass --api-url, export %s, or set baseURL in %s (services.%s defaults to %s if not set)",
+                        service, serviceEnvVar(service), c.FilePath, serviceConfigKey(service), defaultServicePath(service),
                 )
         }</span>
-        <span class="cov5" title="10">return apiURL, err</span>
+        <span class="cov5" title="11">return apiURL, err</span>
 }
 
 // serviceURL is the shared resolver behind ServiceURL and Load's assets-web
 // handling: flagOverride/env are taken as full URLs, the config file entry
-// as a path joined onto BaseURL. Returns errServiceUnconfigured (wrapped)
-// when nothing at all is set, so callers can distinguish "unconfigured"
-// from "configured but invalid".
-func (c *Config) serviceURL(getenv func(string) string, flagOverride, service, envVar string) (string, error) <span class="cov8" title="34">{
+// as a path joined onto BaseURL. A missing services.&lt;service&gt; entry falls
+// back to the standard path convention rather than erroring - the config
+// file only needs an override for a service that deviates from it. Returns
+// errServiceUnconfigured (wrapped) when BaseURL itself is unset and no
+// flag/env override was given either, since nothing can be resolved then.
+func (c *Config) serviceURL(getenv func(string) string, flagOverride, service, envVar string) (string, error) <span class="cov8" title="37">{
         if full := firstNonEmpty(flagOverride, getenv(envVar)); full != "" </span><span class="cov6" title="14">{
                 if err := validateURL(service, full); err != nil </span><span class="cov3" title="3">{
                         return "", err
                 }</span>
-                <span class="cov6" title="11">return full, nil</span>
+                <span class="cov5" title="11">return full, nil</span>
         }
 
-        <span class="cov7" title="20">path := c.Services[serviceConfigKey(service)]
-        if path == "" </span><span class="cov7" title="16">{
+        <span class="cov7" title="23">if c.BaseURL == "" </span><span class="cov5" title="12">{
                 return "", errServiceUnconfigured
         }</span>
-        <span class="cov4" title="4">if c.BaseURL == "" </span><span class="cov1" title="1">{
-                return "", fmt.Errorf("services.%s is set but no baseURL is configured in %s", serviceConfigKey(service), c.FilePath)
-        }</span>
-        <span class="cov3" title="3">full := strings.TrimRight(c.BaseURL, "/") + "/" + strings.TrimLeft(path, "/")
+        <span class="cov5" title="11">path := firstNonEmpty(c.Services[serviceConfigKey(service)], defaultServicePath(service))
+        full := strings.TrimRight(c.BaseURL, "/") + "/" + strings.TrimLeft(path, "/")
         if err := validateURL(service, full); err != nil </span><span class="cov0" title="0">{
                 return "", err
         }</span>
-        <span class="cov3" title="3">return full, nil</span>
+        <span class="cov5" title="11">return full, nil</span>
+}
+
+// defaultServicePath is the standard path convention a service resolves to
+// when the config file doesn't override it: /api/0/&lt;service&gt; for platform
+// APIs (matches the platform's Ingress path-versioning convention), /assets
+// for assets-web (a shared-domain path, not a service package name).
+func defaultServicePath(service string) string <span class="cov6" title="15">{
+        if service == "assets-web" </span><span class="cov4" title="7">{
+                return "/assets"
+        }</span>
+        <span class="cov5" title="8">return "/api/0/" + service</span>
 }
 
 // serviceConfigKey converts a kebab-case service name to its camelCase
 // config file key, e.g. "game-room" -&gt; "gameRoom".
-func serviceConfigKey(service string) string <span class="cov7" title="25">{
+func serviceConfigKey(service string) string <span class="cov6" title="15">{
         parts := strings.Split(service, "-")
-        for i := 1; i &lt; len(parts); i++ </span><span class="cov6" title="14">{
+        for i := 1; i &lt; len(parts); i++ </span><span class="cov5" title="8">{
                 if parts[i] == "" </span><span class="cov0" title="0">{
                         continue</span>
                 }
-                <span class="cov6" title="14">parts[i] = strings.ToUpper(parts[i][:1]) + parts[i][1:]</span>
+                <span class="cov5" title="8">parts[i] = strings.ToUpper(parts[i][:1]) + parts[i][1:]</span>
         }
-        <span class="cov7" title="25">return strings.Join(parts, "")</span>
+        <span class="cov6" title="15">return strings.Join(parts, "")</span>
 }
 
 // serviceEnvVar converts a kebab-case service name to its environment
 // variable name, e.g. "game-room" -&gt; "SWEETRPG_GAME_ROOM_API_URL".
-func serviceEnvVar(service string) string <span class="cov7" title="18">{
+func serviceEnvVar(service string) string <span class="cov6" title="19">{
         return "SWEETRPG_" + strings.ToUpper(strings.ReplaceAll(service, "-", "_")) + "_API_URL"
 }</span>
 
-func validateURL(label, raw string) error <span class="cov7" title="17">{
+func validateURL(label, raw string) error <span class="cov7" title="25">{
         parsed, err := url.Parse(raw)
         if err != nil || (parsed.Scheme != "http" &amp;&amp; parsed.Scheme != "https") || parsed.Host == "" </span><span class="cov3" title="3">{
                 return fmt.Errorf("invalid %s base URL %q: must be an http(s) URL with a host", label, raw)
         }</span>
-        <span class="cov6" title="14">return nil</span>
+        <span class="cov7" title="22">return nil</span>
 }
 
 type fileConfig struct {
@@ -4631,28 +4641,28 @@ type authTenantFile struct {
         Audience string `yaml:"audience"`
 }
 
-func loadFile(homeDir func() (string, error)) (*fileConfig, error) <span class="cov7" title="21">{
+func loadFile(homeDir func() (string, error)) (*fileConfig, error) <span class="cov7" title="23">{
         path := filePath(homeDir)
         if path == "" </span><span class="cov1" title="1">{
                 return &amp;fileConfig{}, nil
         }</span>
-        <span class="cov7" title="20">data, err := os.ReadFile(path)
+        <span class="cov7" title="22">data, err := os.ReadFile(path)
         if errors.Is(err, os.ErrNotExist) </span><span class="cov4" title="6">{
                 return &amp;fileConfig{}, nil
         }</span>
-        <span class="cov6" title="14">if err != nil </span><span class="cov0" title="0">{
+        <span class="cov6" title="16">if err != nil </span><span class="cov0" title="0">{
                 return nil, fmt.Errorf("reading config file %s: %w", path, err)
         }</span>
-        <span class="cov6" title="14">var fc fileConfig
+        <span class="cov6" title="16">var fc fileConfig
         if err := yaml.Unmarshal(data, &amp;fc); err != nil </span><span class="cov1" title="1">{
                 return nil, fmt.Errorf("parsing config file %s: %w", path, err)
         }</span>
-        <span class="cov6" title="13">fc.BaseURL = strings.TrimSpace(fc.BaseURL)
+        <span class="cov6" title="15">fc.BaseURL = strings.TrimSpace(fc.BaseURL)
         fc.Output = strings.TrimSpace(fc.Output)
-        for k, v := range fc.Services </span><span class="cov6" title="12">{
+        for k, v := range fc.Services </span><span class="cov5" title="12">{
                 fc.Services[k] = strings.TrimSpace(v)
         }</span>
-        <span class="cov6" title="13">fc.AuthTenant.Domain = strings.TrimSpace(fc.AuthTenant.Domain)
+        <span class="cov6" title="15">fc.AuthTenant.Domain = strings.TrimSpace(fc.AuthTenant.Domain)
         fc.AuthTenant.ClientID = strings.TrimSpace(fc.AuthTenant.ClientID)
         fc.AuthTenant.Audience = strings.TrimSpace(fc.AuthTenant.Audience)
         return &amp;fc, nil</span>
@@ -4660,21 +4670,21 @@ func loadFile(homeDir func() (string, error)) (*fileConfig, error) <span class="
 
 // filePath returns ~/.config/sweetrpg/cli.yaml, or "" when no home
 // directory is available (the file layer is then simply absent).
-func filePath(homeDir func() (string, error)) string <span class="cov9" title="41">{
+func filePath(homeDir func() (string, error)) string <span class="cov8" title="45">{
         home, err := homeDir()
         if err != nil || home == "" </span><span class="cov2" title="2">{
                 return ""
         }</span>
-        <span class="cov8" title="39">return filepath.Join(home, ".config", "sweetrpg", FileName)</span>
+        <span class="cov8" title="43">return filepath.Join(home, ".config", "sweetrpg", FileName)</span>
 }
 
-func firstNonEmpty(values ...string) string <span class="cov8" title="34">{
-        for _, v := range values </span><span class="cov10" title="64">{
-                if t := strings.TrimSpace(v); t != "" </span><span class="cov6" title="14">{
+func firstNonEmpty(values ...string) string <span class="cov8" title="48">{
+        for _, v := range values </span><span class="cov10" title="89">{
+                if t := strings.TrimSpace(v); t != "" </span><span class="cov7" title="25">{
                         return t
                 }</span>
         }
-        <span class="cov7" title="20">return ""</span>
+        <span class="cov7" title="23">return ""</span>
 }
 </pre>
 		
