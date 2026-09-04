@@ -9,10 +9,11 @@ import (
 )
 
 func TestNewSessionExchangesKeyForToken(t *testing.T) {
-	var gotPath, gotKey string
+	var gotPath, gotKey, gotUserAgent string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotPath = r.URL.Path
 		gotKey = r.URL.Query().Get("applicationKey")
+		gotUserAgent = r.UserAgent()
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"token":"jwt-abc","refreshToken":"refresh-xyz","refreshTokenTTL":9999999999}`))
 	}))
@@ -30,6 +31,11 @@ func TestNewSessionExchangesKeyForToken(t *testing.T) {
 	}
 	if gotKey != "app-key-42" {
 		t.Errorf("applicationKey = %q, want app-key-42", gotKey)
+	}
+	// DriveThruRPG's edge WAF blocks Go's default "Go-http-client/x.y" User-Agent
+	// (see transport.go) - the auth request must never carry it.
+	if gotUserAgent == "" || strings.HasPrefix(gotUserAgent, "Go-http-client") {
+		t.Errorf("User-Agent = %q, want a non-default value", gotUserAgent)
 	}
 }
 

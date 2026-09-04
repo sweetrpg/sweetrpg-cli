@@ -23,6 +23,7 @@ func NewSession(ctx context.Context, appKey, baseURL string) (*Session, error) {
 	if appKey == "" {
 		return nil, ErrNoKey
 	}
+	installUserAgentTransport()
 	cfg := library.NewConfig(appKey)
 	if baseURL != "" {
 		cfg = library.NewConfigWithBaseURL(appKey, baseURL)
