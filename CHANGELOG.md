@@ -2,6 +2,11 @@
 
 No changes yet.
 
+## 0.4.0 - 2026-09-04
+
+### Fixed
+- Stop filtering order_products by archived state
+
 ## 0.3.0 - 2026-09-04
 
 ### Added
