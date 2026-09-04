@@ -44,6 +44,7 @@ func buildTree() {
 		rootCmd.AddCommand(newLinkCommand())
 		rootCmd.AddCommand(newUnlinkCommand())
 		rootCmd.AddCommand(newSearchCommand())
+		rootCmd.AddCommand(newImportCommand())
 	})
 }
 

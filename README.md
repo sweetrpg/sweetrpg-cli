@@ -100,6 +100,58 @@ flags. Uploads require a session and an `assets-web-url` (flag, env, or config
 file); they talk to assets-web directly, so a `--curl` run previews the
 linking PATCH but not the upload itself.
 
+## Importing a DriveThruRPG library
+
+`import dtrpg` bulk-loads the volumes in your DriveThruRPG library into the catalog. It drives
+the same `POST /volumes` and `POST /publishers` endpoints as `add`, so imported records land as
+submitted versions for normal review.
+
+Store a DriveThruRPG application key once per machine:
+
+```bash
+sweetrpg-catalog import dtrpg login                 # paste a key from your DTRPG account settings
+sweetrpg-catalog import dtrpg login --credentials   # or enter email + password to mint one
+```
+
+The key is kept in the OS keychain under service `sweetrpg-catalog-cli`, account
+`dtrpg-app-key` - separate from the platform session. It is exchanged for a short-lived session
+on every run; the session token is never written to disk. Passwords are read at a masked prompt
+and discarded after the exchange. `import dtrpg logout` deletes the stored key.
+
+Run the import (requires both a platform login and a stored DriveThruRPG key):
+
+```bash
+sweetrpg-catalog import dtrpg library --dry-run     # show the plan, write nothing
+sweetrpg-catalog import dtrpg library               # create volumes and publishers
+```
+
+Each product maps to a volume: title, short description, and category filters as tags. The
+DriveThruRPG product ID and ISBN (when present) are stored as `dtrpg_*` properties - purchase
+date and order ID are not, since they're personal-order facts rather than catalog data. The
+product's cover image is downloaded and stored as the volume's own cover asset, not referenced
+by URL. Publisher names resolve case-insensitively to existing publisher records, creating one
+on a miss. Re-runs are idempotent - a product whose `dtrpg_product_id` already appears on a
+volume is skipped.
+
+`import dtrpg library` is meant to be run by an admin or editor: created volumes, publishers,
+and cover links land as **live records**, not review-queue submissions - a bulk import can create
+hundreds or thousands of records, and routing all of that through review would make the queue
+unusable. There's no separate "publish immediately" flag; it follows from the caller's role the
+same way `POST /publishers` and `PATCH /volumes` already do. A submitter-role token still works
+for the writes that support it, but expect it to behave differently than documented here.
+
+Flags:
+
+- `--dry-run` - fetch the library and print the plan (to import / already imported / skipped)
+  without any write.
+- `--include-archived` - also import products whose DriveThruRPG files are archived (skipped by
+  default).
+- `--page-size` - DriveThruRPG retrieval page size; `0` uses the server default.
+
+A per-product failure is isolated: the run continues, the failure is listed in the summary, and
+the command exits `1`. Missing platform session exits `3`; missing DriveThruRPG key exits `1`
+with a pointer to `import dtrpg login`.
+
 ## Scripting
 
 - Pass `--yes` to skip all interactive prompts; ambiguous name resolutions then fail instead of prompting. Deletes additionally require `--force` when stdin is not a TTY - `--yes` alone never deletes in a script.
