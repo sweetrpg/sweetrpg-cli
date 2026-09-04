@@ -100,6 +100,49 @@ flags. Uploads require a session and an `assets-web-url` (flag, env, or config
 file); they talk to assets-web directly, so a `--curl` run previews the
 linking PATCH but not the upload itself.
 
+## Importing a DriveThruRPG library
+
+`import dtrpg` bulk-loads the volumes in your DriveThruRPG library into the catalog. It drives
+the same `POST /volumes` and `POST /publishers` endpoints as `add`, so imported records land as
+submitted versions for normal review.
+
+Store a DriveThruRPG application key once per machine:
+
+```bash
+sweetrpg-catalog import dtrpg login                 # paste a key from your DTRPG account settings
+sweetrpg-catalog import dtrpg login --credentials   # or enter email + password to mint one
+```
+
+The key is kept in the OS keychain under service `sweetrpg-catalog-cli`, account
+`dtrpg-app-key` - separate from the platform session. It is exchanged for a short-lived session
+on every run; the session token is never written to disk. Passwords are read at a masked prompt
+and discarded after the exchange. `import dtrpg logout` deletes the stored key.
+
+Run the import (requires both a platform login and a stored DriveThruRPG key):
+
+```bash
+sweetrpg-catalog import dtrpg library --dry-run     # show the plan, write nothing
+sweetrpg-catalog import dtrpg library               # create volumes and publishers
+```
+
+Each product maps to a volume: title, short description, and category filters as tags. ISBN,
+purchase date, cover image URL, and the DriveThruRPG product and order identifiers are stored as
+`dtrpg_*` properties. Publisher names resolve case-insensitively to existing publisher records,
+creating one on a miss. Re-runs are idempotent - a product whose `dtrpg_product_id` already
+appears on a volume is skipped.
+
+Flags:
+
+- `--dry-run` - fetch the library and print the plan (to import / already imported / skipped)
+  without any write.
+- `--include-archived` - also import products whose DriveThruRPG files are archived (skipped by
+  default).
+- `--page-size` - DriveThruRPG retrieval page size; `0` uses the server default.
+
+A per-product failure is isolated: the run continues, the failure is listed in the summary, and
+the command exits `1`. Missing platform session exits `3`; missing DriveThruRPG key exits `1`
+with a pointer to `import dtrpg login`.
+
 ## Scripting
 
 - Pass `--yes` to skip all interactive prompts; ambiguous name resolutions then fail instead of prompting. Deletes additionally require `--force` when stdin is not a TTY - `--yes` alone never deletes in a script.
