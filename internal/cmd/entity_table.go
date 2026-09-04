@@ -3,9 +3,9 @@ package cmd
 import (
 	"strings"
 
-	"github.com/sweetrpg/sweetrpg-cli/internal/client"
 	"github.com/sweetrpg/catalog-objects.go/vo"
 	modelcore "github.com/sweetrpg/model-core.go/vo"
+	"github.com/sweetrpg/sweetrpg-cli/internal/client"
 )
 
 // Every def below references concrete vo fields in Set/Label/Detail, so
@@ -213,15 +213,15 @@ func reviewDef() EntityDef[vo.ReviewVO] {
 func contributionDef() EntityDef[vo.ContributionVO] {
 	return EntityDef[vo.ContributionVO]{
 		Type:        client.Entities["contribution"],
-		PrimaryFlag: "roles",
-		PrimaryAttr: "Roles",
+		PrimaryFlag: "role",
+		PrimaryAttr: "role",
 		Label: func(c *vo.ContributionVO) string {
 			var parts []string
 			if c.Person != nil {
 				parts = append(parts, c.Person.Name)
 			}
-			if len(c.Roles) > 0 {
-				parts = append(parts, strings.Join(c.Roles, "/"))
+			if c.Role != "" {
+				parts = append(parts, c.Role)
 			}
 			if c.Volume != nil {
 				parts = append(parts, c.Volume.Title)
@@ -231,9 +231,13 @@ func contributionDef() EntityDef[vo.ContributionVO] {
 		Detail:    func(c *vo.ContributionVO) string { return c.Notes },
 		Relations: []Relation{{Type: "person", WireName: "person"}, {Type: "volume", WireName: "volume"}},
 		Flags: []FlagDef[vo.ContributionVO]{
-			{Name: "roles", Attr: "Roles", Repeated: true, Usage: "role such as author, artist (repeatable)", Set: func(v *vo.ContributionVO, vals []string) (any, error) {
-				v.Roles = append([]string(nil), vals...)
-				return v.Roles, nil
+			{Name: "role", Attr: "role", Usage: "contribution role such as author or artist", Set: func(v *vo.ContributionVO, vals []string) (any, error) {
+				role, err := single("role", vals)
+				if err != nil {
+					return nil, err
+				}
+				v.Role = role
+				return v.Role, nil
 			}},
 			{Name: "notes", Attr: "notes", Usage: "internal notes", Set: textSetter(func(v *vo.ContributionVO) *string { return &v.Notes })},
 		},

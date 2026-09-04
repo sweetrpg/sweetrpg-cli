@@ -76,9 +76,9 @@ func register[T any](def EntityDef[T]) {
 }
 
 func adapt[T any](def EntityDef[T]) entityOps {
-	// Contribution's primary ("roles") is also a repeated flag; when that
-	// happens the FlagDef owns create+patch handling and the primary block
-	// stays out of the way.
+	// When an entity's primary ("role" for contribution) is also a flag, the
+	// FlagDef owns create+patch handling and the primary block stays out of
+	// the way.
 	primaryIsFlag := false
 	for _, f := range def.Flags {
 		if f.Name == def.PrimaryFlag {

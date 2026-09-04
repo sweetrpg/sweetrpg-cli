@@ -207,7 +207,7 @@ func TestUnlinkAbsentPairExitsZero(t *testing.T) {
 }
 
 const (
-	contributionListJSON = `{"data":[{"type":"contribution","id":"cccccccccccccccccccccccc","attributes":{"roles":["author"]},"relationships":{"person":{"data":{"type":"person","id":"` + linkPersonID + `"}},"volume":{"data":{"type":"volume","id":"` + linkVolumeID + `"}}}}]}`
+	contributionListJSON = `{"data":[{"type":"contribution","id":"cccccccccccccccccccccccc","attributes":{"role":"author"},"relationships":{"person":{"data":{"type":"person","id":"` + linkPersonID + `"}},"volume":{"data":{"type":"volume","id":"` + linkVolumeID + `"}}}}]}`
 )
 
 func emptyContributionsJSON() string { return `{"data":[]}` }
@@ -250,8 +250,8 @@ func TestRelinkPersonAlreadyCreditedExitsZero(t *testing.T) {
 
 func TestUnlinkPersonDropsEveryRole(t *testing.T) {
 	// One person holding author and artist roles: unlink removes both pairs.
-	authorContribution := `{"type":"contribution","id":"111111111111111111111111","attributes":{"roles":["author"]},"relationships":{"person":{"data":{"type":"person","id":"` + linkPersonID + `"}},"volume":{"data":{"type":"volume","id":"` + linkVolumeID + `"}}}}`
-	artistContribution := `{"type":"contribution","id":"222222222222222222222222","attributes":{"roles":["artist"]},"relationships":{"person":{"data":{"type":"person","id":"` + linkPersonID + `"}},"volume":{"data":{"type":"volume","id":"` + linkVolumeID + `"}}}}`
+	authorContribution := `{"type":"contribution","id":"111111111111111111111111","attributes":{"role":"author"},"relationships":{"person":{"data":{"type":"person","id":"` + linkPersonID + `"}},"volume":{"data":{"type":"volume","id":"` + linkVolumeID + `"}}}}`
+	artistContribution := `{"type":"contribution","id":"222222222222222222222222","attributes":{"role":"artist"},"relationships":{"person":{"data":{"type":"person","id":"` + linkPersonID + `"}},"volume":{"data":{"type":"volume","id":"` + linkVolumeID + `"}}}}`
 	f := newScriptedFixture(t, ok200(contributionsJSON(authorContribution, artistContribution)), ok200(linkedVolumeJSON("")))
 	out := runLink(t, false, "", "person", linkPersonID, "volume", linkVolumeID)
 	credits := f.bodies[1]["credits"].([]any)

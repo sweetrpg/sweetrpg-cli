@@ -195,10 +195,10 @@ func planCreditsChange(
 	}
 	pairs := make([]creditPair, 0, len(contribs))
 	for _, con := range contribs {
-		if con.Person == nil || len(con.Roles) != 1 {
-			continue // multi-role contributions aren't representable as one pair
+		if con.Person == nil || con.Role == "" {
+			continue // role-less contributions aren't representable as one pair
 		}
-		pairs = append(pairs, creditPair{PersonID: con.Person.ID, Role: con.Roles[0]})
+		pairs = append(pairs, creditPair{PersonID: con.Person.ID, Role: con.Role})
 	}
 	hasRequested := slices.Contains(pairs, creditPair{PersonID: personID, Role: flagRole})
 	hasAny := slices.ContainsFunc(pairs, func(p creditPair) bool { return p.PersonID == personID })

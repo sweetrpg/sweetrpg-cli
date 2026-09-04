@@ -4,8 +4,8 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/sweetrpg/sweetrpg-cli/internal/client"
 	"github.com/sweetrpg/catalog-objects.go/vo"
+	"github.com/sweetrpg/sweetrpg-cli/internal/client"
 )
 
 func TestRegistryCoversAllEntities(t *testing.T) {
@@ -74,7 +74,7 @@ func TestPatchPayloadKeysMatchWireAttrs(t *testing.T) {
 		{"volume", map[string][]string{"format": {"core"}, "notes": {"n"}}, []string{"format", "notes"}},
 		{"system", map[string][]string{"game-system": {"D&D"}, "edition": {"5e"}}, []string{"game_system", "edition"}},
 		{"license", map[string][]string{"short-title": {"CC-BY"}}, []string{"short_title"}},
-		{"contribution", map[string][]string{"roles": {"author", "artist"}}, []string{"Roles"}},
+		{"contribution", map[string][]string{"role": {"author"}}, []string{"role"}},
 	}
 	for _, tc := range cases {
 		fields, err := entityRegistry[tc.entity].buildPatch(tc.values)
@@ -114,7 +114,7 @@ func TestLabelAndDetailErase(t *testing.T) {
 	sys := &vo.SystemVO{GameSystem: "D&D 5e", Edition: "5e"}
 	contrib := &vo.ContributionVO{
 		Person: &vo.PersonVO{Name: "John Wick"},
-		Roles:  []string{"author"},
+		Role:   "author",
 		Volume: &vo.VolumeVO{Title: "7th Sea"},
 	}
 
