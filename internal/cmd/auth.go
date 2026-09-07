@@ -116,8 +116,27 @@ var authLogoutCmd = &cobra.Command{
 	},
 }
 
+var authTokenCmd = &cobra.Command{
+	Use:   "token",
+	Short: "Print a fresh access token for the current session",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		cfg, err := resolveAuthConfig()
+		if err != nil {
+			return err
+		}
+		src := &auth.SessionSource{Cfg: cfg, HTTP: &http.Client{Timeout: 15 * time.Second}, Store: auth.KeyringStore{}}
+		tok, err := src.Token(cmd.Context())
+		if err != nil {
+			return authExit(err)
+		}
+		cmd.Println(tok)
+		return nil
+	},
+}
+
 func init() {
 	authCmd.AddCommand(authLoginCmd)
 	authCmd.AddCommand(authLogoutCmd)
+	authCmd.AddCommand(authTokenCmd)
 	rootCmd.AddCommand(authCmd)
 }
