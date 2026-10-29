@@ -466,3 +466,56 @@ func TestParsePrices(t *testing.T) {
 		t.Errorf("prices = %+v err = %v (price IDs are opaque)", p, err)
 	}
 }
+
+func replaceFixture(f *fake) {
+	f.keys, f.tiers, f.defTier = []string{"a.b"}, []string{"free"}, "free"
+	f.products = []map[string]any{
+		{"id": "p", "name": "P", "description": "keep me", "billing": "recurring", "plan_group": "g", "stripe_price_id": "members_10",
+			"entitlements": map[string]any{"a.b": map[string]any{"value": 10, "mode": "at_least"}}},
+		{"id": "q", "name": "Q", "billing": "one_off", "stripe_price_id": "price_same", "entitlements": map[string]any{"a.b": true}},
+	}
+}
+
+func TestReplacePricesSwapsOnlyThePriceID(t *testing.T) {
+	f := newFake(t)
+	replaceFixture(f)
+	c := client(f, &sleeps{}, nil)
+	c.ReplacePrices = true
+	rep, err := c.Load(context.Background(), tiny, &Prices{Products: map[string]string{"p": "price_real", "q": "price_same"}}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := f.writes(); len(got) != 1 || got[0] != "PUT /admin/products/p" {
+		t.Fatalf("writes = %v", got)
+	}
+	var sent map[string]any
+	_ = json.Unmarshal([]byte(f.bodies["PUT /admin/products/p"]), &sent)
+	ents, _ := sent["entitlements"].(map[string]any)
+	ab, _ := ents["a.b"].(map[string]any)
+	if sent["stripe_price_id"] != "price_real" || sent["description"] != "keep me" || sent["plan_group"] != "g" || ab["mode"] != "at_least" {
+		t.Errorf("PUT body = %v", sent)
+	}
+	if len(rep.Replaced) != 1 || rep.Replaced[0] != "price p (members_10 -> price_real)" || len(rep.Skipped) != 0 || len(rep.Created) != 0 {
+		t.Errorf("report = %+v", rep)
+	}
+}
+
+func TestReplacePricesDryRunWritesNothingButReports(t *testing.T) {
+	f := newFake(t)
+	replaceFixture(f)
+	c := client(f, &sleeps{}, nil)
+	c.ReplacePrices = true
+	rep, err := c.Load(context.Background(), tiny, &Prices{Products: map[string]string{"p": "price_real"}}, true)
+	if err != nil || len(rep.Replaced) != 1 || len(f.writes()) != 0 {
+		t.Errorf("report = %+v writes = %v err = %v", rep, f.writes(), err)
+	}
+}
+
+func TestWithoutReplacePricesADifferentPriceIsStillSkipped(t *testing.T) {
+	f := newFake(t)
+	replaceFixture(f)
+	rep, err := client(f, &sleeps{}, nil).Load(context.Background(), tiny, &Prices{Products: map[string]string{"p": "price_real"}}, false)
+	if err != nil || len(rep.Skipped) != 1 || len(rep.Replaced) != 0 || len(f.writes()) != 0 {
+		t.Errorf("report = %+v writes = %v err = %v", rep, f.writes(), err)
+	}
+}
