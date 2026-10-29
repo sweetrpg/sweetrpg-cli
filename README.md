@@ -231,7 +231,16 @@ sweetrpg entitlements seed --file seed/initiative.json --prices seed/prices.dev.
 
 It only creates what is missing: an existing key, tier, or product is left as it is, and an
 already-set default tier is kept. `--prices` sets a Stripe price ID only where a product has none;
-a different existing price is reported as `skipped`. The service URL comes from
+a different existing price is reported as `skipped`. To correct a wrong price ID, put the right
+one in the overlay and add `--replace-prices`: it swaps only that product's price ID (everything
+else on the product is sent back unchanged), and `--dry-run` prints `would replace price <id>
+(<old> -> <new>)` first.
+
+```bash
+echo '{"products": {"members-10": "price_..."}}' > /tmp/fix-prices.json
+sweetrpg entitlements seed --file seed/initiative.json --prices /tmp/fix-prices.json --replace-prices --dry-run
+sweetrpg entitlements seed --file seed/initiative.json --prices /tmp/fix-prices.json --replace-prices
+``` The service URL comes from
 `SWEETRPG_ENTITLEMENTS_API_URL` or `services.entitlements` in the config file (default path
 `/api/0/entitlements`). `--curl` is not supported here because later requests depend on earlier
 responses.

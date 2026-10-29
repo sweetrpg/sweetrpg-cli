@@ -73,6 +73,9 @@ type Report struct {
 	Existing []string
 	// Skipped rows were deliberately not changed.
 	Skipped []string
+	// Replaced lists live prices swapped for the overlay's (or, in a dry run, that would be),
+	// each as "price <product> (<old> -> <new>)". Only populated with Client.ReplacePrices.
+	Replaced []string
 }
 
 // Pacing and retry defaults. The service's standard rate limit is 30 requests per 60 seconds per
@@ -93,6 +96,9 @@ type Client struct {
 	// Token is an administrator's bearer token. It is only ever sent, never logged.
 	Token string
 	HTTP  *http.Client
+	// ReplacePrices lets the overlay replace a product's existing, different price. Off by
+	// default: replacing a live price is deliberate, so it is reported as skipped instead.
+	ReplacePrices bool
 	// Delay is the pause before each request after the first, to stay under the rate limit.
 	Delay time.Duration
 	// MaxRetries bounds how many times one request is retried after a 429.
@@ -302,7 +308,9 @@ func (c *Client) setDefaultTier(ctx context.Context, r *Report, current, want st
 }
 
 // applyPrice sets the overlay price on an existing product that has none. The same price is
-// reported as existing; a different one is left alone, since replacing a live price is deliberate.
+// reported as existing; a different one is left alone and reported as skipped unless
+// ReplacePrices is set, since replacing a live price is deliberate. Only the price changes: the
+// rest of the product is sent back as the service returned it.
 func (c *Client) applyPrice(ctx context.Context, r *Report, lp liveProduct, price string, dryRun bool) error {
 	switch {
 	case price == "":
@@ -311,11 +319,13 @@ func (c *Client) applyPrice(ctx context.Context, r *Report, lp liveProduct, pric
 	case lp.StripePriceID == price:
 		r.Existing = append(r.Existing, "product "+lp.ID, "price "+lp.ID)
 		return nil
-	case lp.StripePriceID != "":
+	case lp.StripePriceID != "" && !c.ReplacePrices:
 		r.Existing = append(r.Existing, "product "+lp.ID)
 		r.Skipped = append(r.Skipped, "price "+lp.ID+" (already set to a different price)")
 		return nil
 	}
+	replacing := lp.StripePriceID != ""
+	old := lp.StripePriceID
 	if !dryRun {
 		lp.StripePriceID = price
 		status, resp, err := c.do(ctx, http.MethodPut, "/admin/products/"+url.PathEscape(lp.ID), lp)
@@ -327,6 +337,10 @@ func (c *Client) applyPrice(ctx context.Context, r *Report, lp liveProduct, pric
 		}
 	}
 	r.Existing = append(r.Existing, "product "+lp.ID)
+	if replacing {
+		r.Replaced = append(r.Replaced, fmt.Sprintf("price %s (%s -> %s)", lp.ID, old, price))
+		return nil
+	}
 	r.Created = append(r.Created, "price "+lp.ID)
 	return nil
 }
