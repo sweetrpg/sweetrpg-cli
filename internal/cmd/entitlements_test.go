@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/sweetrpg/sweetrpg-cli/internal/auth"
@@ -32,6 +33,8 @@ type entServer struct {
 	requests []string
 	auth     []string
 	status   int // status for POSTs; 0 means 201
+	products string
+	limited  int // upcoming requests to answer 429 with Retry-After: 1
 	srv      *httptest.Server
 }
 
@@ -43,12 +46,28 @@ func newEntServer(t *testing.T) *entServer {
 		e.requests = append(e.requests, r.Method+" "+r.URL.Path)
 		e.auth = append(e.auth, r.Header.Get("Authorization"))
 		status := e.status
+		limited := e.limited > 0
+		if limited {
+			e.limited--
+		}
+		products := e.products
 		e.mu.Unlock()
+		if limited {
+			w.Header().Set("Retry-After", "1")
+			w.WriteHeader(http.StatusTooManyRequests)
+			_, _ = io.WriteString(w, `{"error":"rate_limited","message":"Limit exceeded"}`)
+			return
+		}
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/admin/default-tier":
 			_, _ = io.WriteString(w, `{"id":""}`)
 		case r.Method == http.MethodGet && r.URL.Path == "/admin/products":
-			_, _ = io.WriteString(w, `[{"id":"p","name":"P","billing":"one_off","entitlements":{"a.b":1}}]`)
+			if products == "" {
+				products = "[]"
+			}
+			_, _ = io.WriteString(w, products)
+		case r.Method == http.MethodGet:
+			_, _ = io.WriteString(w, `[]`)
 		case r.Method == http.MethodPut && r.URL.Path == "/admin/default-tier":
 			w.WriteHeader(http.StatusNoContent)
 		case r.Method == http.MethodPut:
@@ -81,14 +100,19 @@ func (e *entServer) withSession(t *testing.T, token string, loginErr error) {
 
 func seedCommand(t *testing.T, args ...string) *cobra.Command {
 	t.Helper()
-	oldFile, oldPrices, oldDry, oldCurl := flagEntitlementsSeedFile, flagEntitlementsSeedPrices, flagEntitlementsSeedDryRun, flagCurl
+	oldFile, oldPrices, oldDry, oldCurl, oldDelay, oldSleep := flagEntitlementsSeedFile, flagEntitlementsSeedPrices, flagEntitlementsSeedDryRun, flagCurl, flagEntitlementsSeedDelay, entitlementsSleep
 	t.Cleanup(func() {
 		flagEntitlementsSeedFile, flagEntitlementsSeedPrices, flagEntitlementsSeedDryRun, flagCurl = oldFile, oldPrices, oldDry, oldCurl
+		flagEntitlementsSeedDelay, entitlementsSleep = oldDelay, oldSleep
 	})
+	entitlementsSleep = func(context.Context, time.Duration) error { return nil }
 	ent := newEntitlementsCommand()
 	seed, _, err := ent.Find([]string{"seed"})
 	if err != nil || seed == ent {
 		t.Fatalf("seed subcommand not found: %v", err)
+	}
+	if err := seed.Flags().Set("delay", "0s"); err != nil {
+		t.Fatal(err)
 	}
 	for i := 0; i+1 < len(args); i += 2 {
 		if err := seed.Flags().Set(args[i], args[i+1]); err != nil {
@@ -143,7 +167,8 @@ func TestEntitlementsSeedCreatesRowsAsTheLoggedInUser(t *testing.T) {
 			t.Errorf("Authorization = %q", a)
 		}
 	}
-	if got := strings.Join(e.requests, ","); got != "POST /admin/keys,POST /admin/tiers,GET /admin/default-tier,PUT /admin/default-tier,POST /admin/products" {
+	want := "GET /admin/keys,GET /admin/tiers,GET /admin/products,GET /admin/default-tier,POST /admin/keys,POST /admin/tiers,PUT /admin/default-tier,POST /admin/products"
+	if got := strings.Join(e.requests, ","); got != want {
 		t.Errorf("requests = %s", got)
 	}
 }
@@ -179,21 +204,64 @@ func TestEntitlementsSeedDryRunWritesNothing(t *testing.T) {
 			t.Errorf("dry run sent %s", r)
 		}
 	}
-	if !strings.Contains(out, "created  price p") {
+	if !strings.Contains(out, "created  product p") {
 		t.Errorf("output:\n%s", out)
 	}
 }
 
-func TestEntitlementsSeedAppliesThePriceOverlay(t *testing.T) {
+func TestEntitlementsSeedSendsAFreshProductWithItsPrice(t *testing.T) {
 	e := newEntServer(t)
 	e.withSession(t, "t", nil)
-	prices := writeTemp(t, "prices.json", entPrices)
-	out, err := runSeed(seedCommand(t, "file", writeTemp(t, "seed.json", entSeed), "prices", prices))
+	out, err := runSeed(seedCommand(t, "file", writeTemp(t, "seed.json", entSeed), "prices", writeTemp(t, "prices.json", entPrices)))
+	if err != nil {
+		t.Fatalf("err = %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "created  product p") || e.requests[len(e.requests)-1] != "POST /admin/products" {
+		t.Errorf("requests = %v\n%s", e.requests, out)
+	}
+}
+
+func TestEntitlementsSeedPricesAnExistingProductThatHasNone(t *testing.T) {
+	e := newEntServer(t)
+	e.products = `[{"id":"p","name":"P","billing":"one_off","entitlements":{"a.b":1}}]`
+	e.withSession(t, "t", nil)
+	out, err := runSeed(seedCommand(t, "file", writeTemp(t, "seed.json", entSeed), "prices", writeTemp(t, "prices.json", entPrices)))
 	if err != nil {
 		t.Fatalf("err = %v\n%s", err, out)
 	}
 	if !strings.Contains(out, "created  price p") || e.requests[len(e.requests)-1] != "PUT /admin/products/p" {
 		t.Errorf("requests = %v\n%s", e.requests, out)
+	}
+}
+
+func TestEntitlementsSeedReportsADifferentExistingPriceAsSkipped(t *testing.T) {
+	e := newEntServer(t)
+	e.products = `[{"id":"p","name":"P","billing":"one_off","stripe_price_id":"price_live","entitlements":{"a.b":1}}]`
+	e.withSession(t, "t", nil)
+	out, err := runSeed(seedCommand(t, "file", writeTemp(t, "seed.json", entSeed), "prices", writeTemp(t, "prices.json", entPrices)))
+	if err != nil || !strings.Contains(out, "skipped  price p") {
+		t.Errorf("err = %v\n%s", err, out)
+	}
+	for _, r := range e.requests {
+		if strings.HasPrefix(r, "PUT /admin/products") {
+			t.Errorf("a live price was overwritten: %s", r)
+		}
+	}
+}
+
+func TestEntitlementsSeedWaitsOutARateLimitAndSaysSo(t *testing.T) {
+	e := newEntServer(t)
+	e.limited = 1
+	e.withSession(t, "t", nil)
+	c := seedCommand(t, "file", writeTemp(t, "seed.json", entSeed))
+	var waits []time.Duration
+	entitlementsSleep = func(_ context.Context, d time.Duration) error { waits = append(waits, d); return nil }
+	out, err := runSeed(c)
+	if err != nil {
+		t.Fatalf("err = %v\n%s", err, out)
+	}
+	if len(waits) != 1 || waits[0] != time.Second || !strings.Contains(out, "rate limited") {
+		t.Errorf("waits = %v\n%s", waits, out)
 	}
 }
 

@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"os"
@@ -10,10 +11,14 @@ import (
 	"github.com/sweetrpg/sweetrpg-cli/internal/entitlements"
 )
 
+// entitlementsSleep is a test seam for the loader's rate-limit and pacing waits; nil sleeps for real.
+var entitlementsSleep func(ctx context.Context, d time.Duration) error
+
 var (
 	flagEntitlementsSeedFile   string
 	flagEntitlementsSeedPrices string
 	flagEntitlementsSeedDryRun bool
+	flagEntitlementsSeedDelay  time.Duration
 )
 
 // newEntitlementsCommand builds the entitlements namespace. Only `seed` lives here today.
@@ -26,7 +31,9 @@ func newEntitlementsCommand() *cobra.Command {
 		Use:   "seed --file <seed.json> [--prices <prices.json>] [--dry-run]",
 		Short: "Load a catalog seed (and optional Stripe price overlay) through the admin API",
 		Long: "Load keys, tiers, the default tier, and products from a seed file through the\n" +
-			"entitlements admin API, authenticated as you (the admin role is checked server-side).\n\n" +
+			"entitlements admin API, authenticated as you (the admin role is checked server-side).\n" +
+			"It reads what exists with a few list calls, paces its writes (--delay), and waits out\n" +
+			"a rate limit (HTTP 429) with backoff, honoring Retry-After when the service sends it.\n\n" +
 			"Create-only: an existing key, tier, or product is left exactly as it is, and an\n" +
 			"already-set default tier is not changed. --prices applies a per-environment overlay\n" +
 			"of Stripe price IDs: a price is set only where the product has none, and a different\n" +
@@ -39,6 +46,8 @@ func newEntitlementsCommand() *cobra.Command {
 	seed.Flags().StringVar(&flagEntitlementsSeedFile, "file", "", "seed file (required)")
 	seed.Flags().StringVar(&flagEntitlementsSeedPrices, "prices", "", "per-environment Stripe price overlay")
 	seed.Flags().BoolVar(&flagEntitlementsSeedDryRun, "dry-run", false, "report what would change without writing")
+	seed.Flags().DurationVar(&flagEntitlementsSeedDelay, "delay", entitlements.DefaultDelay,
+		"pause between requests, to stay under the service's rate limit")
 	_ = seed.MarkFlagRequired("file")
 	ent.AddCommand(seed)
 	return ent
@@ -62,11 +71,12 @@ func runEntitlementsSeed(cmd *cobra.Command, _ []string) error {
 		return authExit(err)
 	}
 
-	client := &entitlements.Client{BaseURL: baseURL, Token: token, HTTP: &http.Client{Timeout: 30 * time.Second}}
-	report, err := client.Load(cmd.Context(), doc, flagEntitlementsSeedDryRun)
-	if err == nil && overlay != nil {
-		err = client.ApplyPrices(cmd.Context(), overlay, flagEntitlementsSeedDryRun, report)
+	client := &entitlements.Client{
+		BaseURL: baseURL, Token: token, HTTP: &http.Client{Timeout: 30 * time.Second},
+		Delay: flagEntitlementsSeedDelay, Sleep: entitlementsSleep,
+		Logf: func(format string, args ...any) { cmd.PrintErrf(format+"\n", args...) },
 	}
+	report, err := client.Load(cmd.Context(), doc, overlay, flagEntitlementsSeedDryRun)
 	for _, l := range report.Created {
 		cmd.Println("created ", l)
 	}
