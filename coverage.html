@@ -95,7 +95,7 @@
 				
 				<option value="file19">github.com/sweetrpg/sweetrpg-cli/internal/cmd/entities.go (88.5%)</option>
 				
-				<option value="file20">github.com/sweetrpg/sweetrpg-cli/internal/cmd/entitlements.go (97.8%)</option>
+				<option value="file20">github.com/sweetrpg/sweetrpg-cli/internal/cmd/entitlements.go (98.1%)</option>
 				
 				<option value="file21">github.com/sweetrpg/sweetrpg-cli/internal/cmd/entity_table.go (49.5%)</option>
 				
@@ -131,7 +131,7 @@
 				
 				<option value="file37">github.com/sweetrpg/sweetrpg-cli/internal/dtrpg/transport.go (100.0%)</option>
 				
-				<option value="file38">github.com/sweetrpg/sweetrpg-cli/internal/entitlements/seed.go (91.0%)</option>
+				<option value="file38">github.com/sweetrpg/sweetrpg-cli/internal/entitlements/seed.go (91.2%)</option>
 				
 				</select>
 			</div>
@@ -1847,8 +1847,8 @@ type ExitError struct {
         Err  error
 }
 
-func (e *ExitError) Error() string <span class="cov7" title="9">{ return e.Err.Error() }</span>
-func (e *ExitError) ExitCode() int <span class="cov10" title="21">{ return e.Code }</span>
+func (e *ExitError) Error() string <span class="cov7" title="10">{ return e.Err.Error() }</span>
+func (e *ExitError) ExitCode() int <span class="cov10" title="22">{ return e.Code }</span>
 func (e *ExitError) Unwrap() error <span class="cov0" title="0">{ return e.Err }</span>
 
 // authExit tags errors the user fixes by logging in again.
@@ -2936,14 +2936,15 @@ import (
 var entitlementsSleep func(ctx context.Context, d time.Duration) error
 
 var (
-        flagEntitlementsSeedFile   string
-        flagEntitlementsSeedPrices string
-        flagEntitlementsSeedDryRun bool
-        flagEntitlementsSeedDelay  time.Duration
+        flagEntitlementsSeedFile    string
+        flagEntitlementsSeedPrices  string
+        flagEntitlementsSeedDryRun  bool
+        flagEntitlementsSeedDelay   time.Duration
+        flagEntitlementsSeedReplace bool
 )
 
 // newEntitlementsCommand builds the entitlements namespace. Only `seed` lives here today.
-func newEntitlementsCommand() *cobra.Command <span class="cov8" title="16">{
+func newEntitlementsCommand() *cobra.Command <span class="cov8" title="19">{
         ent := &amp;cobra.Command{
                 Use:   "entitlements",
                 Short: "Manage the SweetRPG entitlements catalog",
@@ -2958,7 +2959,8 @@ func newEntitlementsCommand() *cobra.Command <span class="cov8" title="16">{
                         "Create-only: an existing key, tier, or product is left exactly as it is, and an\n" +
                         "already-set default tier is not changed. --prices applies a per-environment overlay\n" +
                         "of Stripe price IDs: a price is set only where the product has none, and a different\n" +
-                        "existing price is reported as skipped. The seed and price files live in the\n" +
+                        "existing price is reported as skipped unless --replace-prices is given, which swaps\n" +
+                        "just that price ID (dry-run prints \"would replace\"). The seed and price files live in the\n" +
                         "entitlements-api repo (seed/initiative.json, seed/prices.dev.json).\n\n" +
                         "  sweetrpg entitlements seed --file seed/initiative.json --prices seed/prices.dev.json --dry-run",
                 Args: cobra.NoArgs,
@@ -2969,70 +2971,82 @@ func newEntitlementsCommand() *cobra.Command <span class="cov8" title="16">{
         seed.Flags().BoolVar(&amp;flagEntitlementsSeedDryRun, "dry-run", false, "report what would change without writing")
         seed.Flags().DurationVar(&amp;flagEntitlementsSeedDelay, "delay", entitlements.DefaultDelay,
                 "pause between requests, to stay under the service's rate limit")
+        seed.Flags().BoolVar(&amp;flagEntitlementsSeedReplace, "replace-prices", false,
+                "replace an existing, different Stripe price ID with the one in --prices (default: report it as skipped)")
         _ = seed.MarkFlagRequired("file")
         ent.AddCommand(seed)
         return ent
 }</span>
 
-func runEntitlementsSeed(cmd *cobra.Command, _ []string) error <span class="cov8" title="14">{
+func runEntitlementsSeed(cmd *cobra.Command, _ []string) error <span class="cov8" title="17">{
         if flagCurl </span><span class="cov1" title="1">{
                 return usageErr("--curl is not supported for seed: it makes requests that depend on earlier responses")
         }</span>
-        <span class="cov8" title="13">doc, overlay, err := readSeedFiles(flagEntitlementsSeedFile, flagEntitlementsSeedPrices)
+        <span class="cov8" title="16">if flagEntitlementsSeedReplace &amp;&amp; flagEntitlementsSeedPrices == "" </span><span class="cov1" title="1">{
+                return usageErr("--replace-prices needs --prices")
+        }</span>
+        <span class="cov8" title="15">doc, overlay, err := readSeedFiles(flagEntitlementsSeedFile, flagEntitlementsSeedPrices)
         if err != nil </span><span class="cov4" title="4">{
                 return usageErr("%v", err)
         }</span>
 
-        <span class="cov7" title="9">baseURL, tokens, err := resolveAPIRequest("entitlements")
+        <span class="cov7" title="11">baseURL, tokens, err := resolveAPIRequest("entitlements")
         if err != nil </span><span class="cov0" title="0">{
                 return err
         }</span>
-        <span class="cov7" title="9">token, err := tokens(cmd.Context())
+        <span class="cov7" title="11">token, err := tokens(cmd.Context())
         if err != nil </span><span class="cov1" title="1">{
                 return authExit(err)
         }</span>
 
-        <span class="cov6" title="8">client := &amp;entitlements.Client{
+        <span class="cov7" title="10">client := &amp;entitlements.Client{
                 BaseURL: baseURL, Token: token, HTTP: &amp;http.Client{Timeout: 30 * time.Second},
-                Delay: flagEntitlementsSeedDelay, Sleep: entitlementsSleep,
+                Delay: flagEntitlementsSeedDelay, Sleep: entitlementsSleep, ReplacePrices: flagEntitlementsSeedReplace,
                 Logf: func(format string, args ...any) </span><span class="cov1" title="1">{ cmd.PrintErrf(format+"\n", args...) }</span>,
         }
-        <span class="cov6" title="8">report, err := client.Load(cmd.Context(), doc, overlay, flagEntitlementsSeedDryRun)
-        for _, l := range report.Created </span><span class="cov10" title="24">{
+        <span class="cov7" title="10">report, err := client.Load(cmd.Context(), doc, overlay, flagEntitlementsSeedDryRun)
+        for _, l := range report.Created </span><span class="cov10" title="30">{
                 cmd.Println("created ", l)
         }</span>
-        <span class="cov6" title="8">for _, l := range report.Existing </span><span class="cov5" title="5">{
+        <span class="cov7" title="10">for _, l := range report.Existing </span><span class="cov6" title="7">{
                 cmd.Println("exists  ", l)
         }</span>
-        <span class="cov6" title="8">for _, l := range report.Skipped </span><span class="cov1" title="1">{
+        <span class="cov7" title="10">for _, l := range report.Skipped </span><span class="cov1" title="1">{
                 cmd.Println("skipped ", l)
         }</span>
-        <span class="cov6" title="8">return err</span>
+        <span class="cov7" title="10">verb := "replaced"
+        if flagEntitlementsSeedDryRun </span><span class="cov2" title="2">{
+                verb = "would replace"
+        }</span>
+        <span class="cov7" title="10">for _, l := range report.Replaced </span><span class="cov2" title="2">{
+                cmd.Println(verb, l)
+        }</span>
+        <span class="cov7" title="10">return err</span>
 }
 
 // readSeedFiles parses the seed file and, when given, the price overlay. Problems here are the
 // caller's input, reported as usage errors.
-func readSeedFiles(seedPath, pricesPath string) (*entitlements.Doc, *entitlements.Prices, error) <span class="cov8" title="13">{
+func readSeedFiles(seedPath, pricesPath string) (*entitlements.Doc, *entitlements.Prices, error) <span class="cov8" title="15">{
         raw, err := os.ReadFile(seedPath)
         if err != nil </span><span class="cov1" title="1">{
                 return nil, nil, err
         }</span>
-        <span class="cov8" title="12">doc, err := entitlements.Parse(raw)
+        <span class="cov7" title="14">doc, err := entitlements.Parse(raw)
         if err != nil </span><span class="cov1" title="1">{
                 return nil, nil, fmt.Errorf("%s: %w", seedPath, err)
         }</span>
-        <span class="cov7" title="11">if pricesPath == "" </span><span class="cov5" title="5">{
+        <span class="cov7" title="13">if pricesPath == "" </span><span class="cov5" title="5">{
                 return doc, nil, nil
         }</span>
-        <span class="cov6" title="6">raw, err = os.ReadFile(pricesPath)
+        <span class="cov6" title="8">raw, err = os.ReadFile(pricesPath)
         if err != nil </span><span class="cov1" title="1">{
                 return nil, nil, err
         }</span>
-        <span class="cov5" title="5">overlay, err := entitlements.ParsePrices(raw)
+        <span class="cov6" title="7">overlay, err := entitlements.ParsePrices(raw)
         if err != nil </span><span class="cov1" title="1">{
                 return nil, nil, fmt.Errorf("%s: %w", pricesPath, err)
         }</span>
-        <span class="cov4" title="4">return doc, overlay, nil</span>
+        <span class="cov5" title="6">return doc, overlay, nil</span>
 }
 </pre>
 		
@@ -4621,7 +4635,7 @@ func classifyUsage(err error) error <span class="cov6" title="10">{
 }
 
 // usageErr tags a validation failure as a usage error (exit code 2).
-func usageErr(format string, args ...any) error <span class="cov7" title="14">{
+func usageErr(format string, args ...any) error <span class="cov7" title="15">{
         return &amp;ExitError{Code: 2, Err: fmt.Errorf(format, args...)}
 }</span>
 </pre>
@@ -5595,6 +5609,9 @@ type Report struct {
         Existing []string
         // Skipped rows were deliberately not changed.
         Skipped []string
+        // Replaced lists live prices swapped for the overlay's (or, in a dry run, that would be),
+        // each as "price &lt;product&gt; (&lt;old&gt; -&gt; &lt;new&gt;)". Only populated with Client.ReplacePrices.
+        Replaced []string
 }
 
 // Pacing and retry defaults. The service's standard rate limit is 30 requests per 60 seconds per
@@ -5615,6 +5632,9 @@ type Client struct {
         // Token is an administrator's bearer token. It is only ever sent, never logged.
         Token string
         HTTP  *http.Client
+        // ReplacePrices lets the overlay replace a product's existing, different price. Off by
+        // default: replacing a live price is deliberate, so it is reported as skipped instead.
+        ReplacePrices bool
         // Delay is the pause before each request after the first, to stay under the rate limit.
         Delay time.Duration
         // MaxRetries bounds how many times one request is retried after a 429.
@@ -5641,66 +5661,66 @@ type state struct {
 // price gets the overlay price; one with a different price is left and reported as skipped. It
 // never overwrites anything else, so re-running it cannot undo an administrator's edit. prices may
 // be nil. DryRun reports without writing.
-func (c *Client) Load(ctx context.Context, d *Doc, prices *Prices, dryRun bool) (*Report, error) <span class="cov5" title="17">{
+func (c *Client) Load(ctx context.Context, d *Doc, prices *Prices, dryRun bool) (*Report, error) <span class="cov6" title="20">{
         r := &amp;Report{}
         st, err := c.readState(ctx)
         if err != nil </span><span class="cov3" title="4">{
                 return r, err
         }</span>
-        <span class="cov5" title="13">for _, k := range d.Keys </span><span class="cov5" title="13">{
+        <span class="cov5" title="16">for _, k := range d.Keys </span><span class="cov5" title="16">{
                 if err := c.create(ctx, r, st.keys[k.Key], "key "+k.Key, "/admin/keys", k, dryRun); err != nil </span><span class="cov1" title="1">{
                         return r, err
                 }</span>
         }
-        <span class="cov5" title="12">for _, t := range d.Tiers </span><span class="cov5" title="12">{
+        <span class="cov5" title="15">for _, t := range d.Tiers </span><span class="cov5" title="15">{
                 if err := c.create(ctx, r, st.tiers[t.ID], "tier "+t.ID, "/admin/tiers", t, dryRun); err != nil </span><span class="cov0" title="0">{
                         return r, err
                 }</span>
         }
-        <span class="cov5" title="12">if err := c.setDefaultTier(ctx, r, st.defTier, d.DefaultTier, dryRun); err != nil </span><span class="cov0" title="0">{
+        <span class="cov5" title="15">if err := c.setDefaultTier(ctx, r, st.defTier, d.DefaultTier, dryRun); err != nil </span><span class="cov0" title="0">{
                 return r, err
         }</span>
-        <span class="cov5" title="12">for _, p := range d.Products </span><span class="cov6" title="24">{
-                if lp, ok := st.products[p.ID]; ok </span><span class="cov3" title="4">{
+        <span class="cov5" title="15">for _, p := range d.Products </span><span class="cov6" title="30">{
+                if lp, ok := st.products[p.ID]; ok </span><span class="cov4" title="10">{
                         if err := c.applyPrice(ctx, r, lp, prices.priceFor(p.ID), dryRun); err != nil </span><span class="cov0" title="0">{
                                 return r, err
                         }</span>
-                        <span class="cov3" title="4">continue</span>
+                        <span class="cov4" title="10">continue</span>
                 }
                 <span class="cov6" title="20">p.StripePriceID = prices.priceFor(p.ID)
                 if err := c.create(ctx, r, false, "product "+p.ID, "/admin/products", p, dryRun); err != nil </span><span class="cov0" title="0">{
                         return r, err
                 }</span>
         }
-        <span class="cov5" title="12">return r, prices.checkKnown(d, st)</span>
+        <span class="cov5" title="15">return r, prices.checkKnown(d, st)</span>
 }
 
-func (p *Prices) priceFor(id string) string <span class="cov6" title="24">{
+func (p *Prices) priceFor(id string) string <span class="cov6" title="30">{
         if p == nil </span><span class="cov5" title="12">{
                 return ""
         }</span>
-        <span class="cov5" title="12">return p.Products[id]</span>
+        <span class="cov5" title="18">return p.Products[id]</span>
 }
 
 // checkKnown rejects an overlay entry that names a product that is neither in the seed nor already
 // live, which would otherwise be silently ignored.
-func (p *Prices) checkKnown(d *Doc, st *state) error <span class="cov5" title="12">{
+func (p *Prices) checkKnown(d *Doc, st *state) error <span class="cov5" title="15">{
         if p == nil </span><span class="cov4" title="6">{
                 return nil
         }</span>
-        <span class="cov4" title="6">seeded := map[string]bool{}
-        for _, pr := range d.Products </span><span class="cov5" title="12">{
+        <span class="cov4" title="9">seeded := map[string]bool{}
+        for _, pr := range d.Products </span><span class="cov5" title="18">{
                 seeded[pr.ID] = true
         }</span>
-        <span class="cov4" title="6">for id := range p.Products </span><span class="cov4" title="7">{
+        <span class="cov4" title="9">for id := range p.Products </span><span class="cov5" title="11">{
                 if _, live := st.products[id]; !seeded[id] &amp;&amp; !live </span><span class="cov1" title="1">{
                         return fmt.Errorf("prices: product %s is not in the seed and does not exist", id)
                 }</span>
         }
-        <span class="cov3" title="5">return nil</span>
+        <span class="cov4" title="8">return nil</span>
 }
 
-func (c *Client) readState(ctx context.Context) (*state, error) <span class="cov5" title="17">{
+func (c *Client) readState(ctx context.Context) (*state, error) <span class="cov6" title="20">{
         st := &amp;state{keys: map[string]bool{}, tiers: map[string]bool{}, products: map[string]liveProduct{}}
         var keys []struct {
                 Key string `json:"key"`
@@ -5708,32 +5728,32 @@ func (c *Client) readState(ctx context.Context) (*state, error) <span class="cov
         if err := c.list(ctx, "/admin/keys", &amp;keys); err != nil </span><span class="cov3" title="4">{
                 return nil, err
         }</span>
-        <span class="cov5" title="13">for _, k := range keys </span><span class="cov9" title="202">{
+        <span class="cov5" title="16">for _, k := range keys </span><span class="cov9" title="205">{
                 st.keys[k.Key] = true
         }</span>
-        <span class="cov5" title="13">var tiers []struct {
+        <span class="cov5" title="16">var tiers []struct {
                 ID string `json:"id"`
         }
         if err := c.list(ctx, "/admin/tiers", &amp;tiers); err != nil </span><span class="cov0" title="0">{
                 return nil, err
         }</span>
-        <span class="cov5" title="13">for _, t := range tiers </span><span class="cov9" title="202">{
+        <span class="cov5" title="16">for _, t := range tiers </span><span class="cov9" title="205">{
                 st.tiers[t.ID] = true
         }</span>
-        <span class="cov5" title="13">var products []liveProduct
+        <span class="cov5" title="16">var products []liveProduct
         if err := c.list(ctx, "/admin/products", &amp;products); err != nil </span><span class="cov0" title="0">{
                 return nil, err
         }</span>
-        <span class="cov5" title="13">for _, p := range products </span><span class="cov10" title="204">{
+        <span class="cov5" title="16">for _, p := range products </span><span class="cov10" title="210">{
                 st.products[p.ID] = p
         }</span>
-        <span class="cov5" title="13">var def struct {
+        <span class="cov5" title="16">var def struct {
                 ID string `json:"id"`
         }
         if err := c.getJSON(ctx, "/admin/default-tier", &amp;def); err != nil </span><span class="cov0" title="0">{
                 return nil, err
         }</span>
-        <span class="cov5" title="13">st.defTier = def.ID
+        <span class="cov5" title="16">st.defTier = def.ID
         return st, nil</span>
 }
 
@@ -5741,44 +5761,44 @@ func (c *Client) readState(ctx context.Context) (*state, error) <span class="cov
 const listPage = 200
 
 // list reads every row of a collection, paging only if a page comes back full.
-func (c *Client) list(ctx context.Context, path string, into any) error <span class="cov7" title="43">{
+func (c *Client) list(ctx context.Context, path string, into any) error <span class="cov7" title="52">{
         var all []json.RawMessage
-        for skip := 0; ; skip += listPage </span><span class="cov7" title="46">{
+        for skip := 0; ; skip += listPage </span><span class="cov7" title="55">{
                 var page []json.RawMessage
                 if err := c.getJSON(ctx, fmt.Sprintf("%s?limit=%d&amp;skip=%d", path, listPage, skip), &amp;page); err != nil </span><span class="cov3" title="4">{
                         return err
                 }</span>
-                <span class="cov7" title="42">all = append(all, page...)
-                if len(page) &lt; listPage </span><span class="cov7" title="39">{
+                <span class="cov7" title="51">all = append(all, page...)
+                if len(page) &lt; listPage </span><span class="cov7" title="48">{
                         break</span>
                 }
         }
-        <span class="cov7" title="39">b, err := json.Marshal(all)
+        <span class="cov7" title="48">b, err := json.Marshal(all)
         if err != nil </span><span class="cov0" title="0">{
                 return err
         }</span>
-        <span class="cov7" title="39">return json.Unmarshal(b, into)</span>
+        <span class="cov7" title="48">return json.Unmarshal(b, into)</span>
 }
 
-func (c *Client) getJSON(ctx context.Context, path string, into any) error <span class="cov7" title="59">{
+func (c *Client) getJSON(ctx context.Context, path string, into any) error <span class="cov8" title="71">{
         status, body, err := c.do(ctx, http.MethodGet, path, nil)
         if err != nil </span><span class="cov2" title="3">{
                 return fmt.Errorf("reading %s: %w", path, err)
         }</span>
-        <span class="cov7" title="56">if status != http.StatusOK </span><span class="cov1" title="1">{
+        <span class="cov8" title="68">if status != http.StatusOK </span><span class="cov1" title="1">{
                 return apiError("reading "+path, status, body)
         }</span>
-        <span class="cov7" title="55">if err := json.Unmarshal(body, into); err != nil </span><span class="cov0" title="0">{
+        <span class="cov8" title="67">if err := json.Unmarshal(body, into); err != nil </span><span class="cov0" title="0">{
                 return fmt.Errorf("reading %s: %w", path, err)
         }</span>
-        <span class="cov7" title="55">return nil</span>
+        <span class="cov8" title="67">return nil</span>
 }
 
 // create posts a row unless it already exists. A 409 from a row created since the state was read
 // is also "exists".
-func (c *Client) create(ctx context.Context, r *Report, exists bool, label, path string, body any, dryRun bool) error <span class="cov7" title="45">{
+func (c *Client) create(ctx context.Context, r *Report, exists bool, label, path string, body any, dryRun bool) error <span class="cov7" title="51">{
         switch </span>{
-        case exists:<span class="cov3" title="4">
+        case exists:<span class="cov4" title="10">
                 r.Existing = append(r.Existing, label)
                 return nil</span>
         case dryRun:<span class="cov6" title="20">
@@ -5799,12 +5819,12 @@ func (c *Client) create(ctx context.Context, r *Report, exists bool, label, path
         <span class="cov6" title="20">return nil</span>
 }
 
-func (c *Client) setDefaultTier(ctx context.Context, r *Report, current, want string, dryRun bool) error <span class="cov5" title="12">{
+func (c *Client) setDefaultTier(ctx context.Context, r *Report, current, want string, dryRun bool) error <span class="cov5" title="15">{
         if want == "" </span><span class="cov0" title="0">{
                 return nil
         }</span>
-        <span class="cov5" title="12">label := "default tier " + want
-        if current != "" </span><span class="cov2" title="3">{
+        <span class="cov5" title="15">label := "default tier " + want
+        if current != "" </span><span class="cov4" title="6">{
                 r.Existing = append(r.Existing, label)
                 return nil
         }</span>
@@ -5824,32 +5844,40 @@ func (c *Client) setDefaultTier(ctx context.Context, r *Report, current, want st
 }
 
 // applyPrice sets the overlay price on an existing product that has none. The same price is
-// reported as existing; a different one is left alone, since replacing a live price is deliberate.
-func (c *Client) applyPrice(ctx context.Context, r *Report, lp liveProduct, price string, dryRun bool) error <span class="cov3" title="4">{
+// reported as existing; a different one is left alone and reported as skipped unless
+// ReplacePrices is set, since replacing a live price is deliberate. Only the price changes: the
+// rest of the product is sent back as the service returned it.
+func (c *Client) applyPrice(ctx context.Context, r *Report, lp liveProduct, price string, dryRun bool) error <span class="cov4" title="10">{
         switch </span>{
-        case price == "":<span class="cov1" title="1">
+        case price == "":<span class="cov2" title="3">
                 r.Existing = append(r.Existing, "product "+lp.ID)
                 return nil</span>
-        case lp.StripePriceID == price:<span class="cov1" title="1">
+        case lp.StripePriceID == price:<span class="cov2" title="2">
                 r.Existing = append(r.Existing, "product "+lp.ID, "price "+lp.ID)
                 return nil</span>
-        case lp.StripePriceID != "":<span class="cov1" title="1">
+        case lp.StripePriceID != "" &amp;&amp; !c.ReplacePrices:<span class="cov2" title="2">
                 r.Existing = append(r.Existing, "product "+lp.ID)
                 r.Skipped = append(r.Skipped, "price "+lp.ID+" (already set to a different price)")
                 return nil</span>
         }
-        <span class="cov1" title="1">if !dryRun </span><span class="cov1" title="1">{
+        <span class="cov2" title="3">replacing := lp.StripePriceID != ""
+        old := lp.StripePriceID
+        if !dryRun </span><span class="cov2" title="2">{
                 lp.StripePriceID = price
                 status, resp, err := c.do(ctx, http.MethodPut, "/admin/products/"+url.PathEscape(lp.ID), lp)
                 if err != nil </span><span class="cov0" title="0">{
                         return fmt.Errorf("prices %s: %w", lp.ID, err)
                 }</span>
-                <span class="cov1" title="1">if status != http.StatusOK </span><span class="cov0" title="0">{
+                <span class="cov2" title="2">if status != http.StatusOK </span><span class="cov0" title="0">{
                         return apiError("prices "+lp.ID, status, resp)
                 }</span>
         }
-        <span class="cov1" title="1">r.Existing = append(r.Existing, "product "+lp.ID)
-        r.Created = append(r.Created, "price "+lp.ID)
+        <span class="cov2" title="3">r.Existing = append(r.Existing, "product "+lp.ID)
+        if replacing </span><span class="cov2" title="2">{
+                r.Replaced = append(r.Replaced, fmt.Sprintf("price %s (%s -&gt; %s)", lp.ID, old, price))
+                return nil
+        }</span>
+        <span class="cov1" title="1">r.Created = append(r.Created, "price "+lp.ID)
         return nil</span>
 }
 
@@ -5860,24 +5888,24 @@ func apiError(what string, status int, body []byte) error <span class="cov2" tit
 
 // do sends one request, pausing first (pacing) and retrying a 429 with backoff. It returns the
 // final status and body; only transport failures and exhausted context are errors.
-func (c *Client) do(ctx context.Context, method, path string, body any) (int, []byte, error) <span class="cov8" title="85">{
+func (c *Client) do(ctx context.Context, method, path string, body any) (int, []byte, error) <span class="cov8" title="98">{
         var payload []byte
-        if body != nil </span><span class="cov6" title="26">{
+        if body != nil </span><span class="cov6" title="27">{
                 b, err := json.Marshal(body)
                 if err != nil </span><span class="cov0" title="0">{
                         return 0, nil, err
                 }</span>
-                <span class="cov6" title="26">payload = b</span>
+                <span class="cov6" title="27">payload = b</span>
         }
-        <span class="cov8" title="85">for attempt := 0; ; attempt++ </span><span class="cov8" title="91">{
+        <span class="cov8" title="98">for attempt := 0; ; attempt++ </span><span class="cov8" title="104">{
                 if c.sent &amp;&amp; c.Delay &gt; 0 </span><span class="cov4" title="8">{
                         if err := c.sleep(ctx, c.Delay); err != nil </span><span class="cov0" title="0">{
                                 return 0, nil, err
                         }</span>
                 }
-                <span class="cov8" title="91">c.sent = true
+                <span class="cov8" title="104">c.sent = true
                 status, header, out, err := c.once(ctx, method, path, payload)
-                if err != nil || status != http.StatusTooManyRequests </span><span class="cov8" title="83">{
+                if err != nil || status != http.StatusTooManyRequests </span><span class="cov8" title="96">{
                         return status, out, err
                 }</span>
                 <span class="cov4" title="8">if attempt &gt;= c.maxRetries() </span><span class="cov1" title="1">{
@@ -5891,29 +5919,29 @@ func (c *Client) do(ctx context.Context, method, path string, body any) (int, []
         }
 }
 
-func (c *Client) once(ctx context.Context, method, path string, payload []byte) (int, http.Header, []byte, error) <span class="cov8" title="91">{
+func (c *Client) once(ctx context.Context, method, path string, payload []byte) (int, http.Header, []byte, error) <span class="cov8" title="104">{
         var rd io.Reader
-        if payload != nil </span><span class="cov6" title="26">{
+        if payload != nil </span><span class="cov6" title="27">{
                 rd = bytes.NewReader(payload)
         }</span>
-        <span class="cov8" title="91">req, err := http.NewRequestWithContext(ctx, method, strings.TrimRight(c.BaseURL, "/")+path, rd)
+        <span class="cov8" title="104">req, err := http.NewRequestWithContext(ctx, method, strings.TrimRight(c.BaseURL, "/")+path, rd)
         if err != nil </span><span class="cov0" title="0">{
                 return 0, nil, nil, err
         }</span>
-        <span class="cov8" title="91">req.Header.Set("Authorization", "Bearer "+c.Token)
-        if payload != nil </span><span class="cov6" title="26">{
+        <span class="cov8" title="104">req.Header.Set("Authorization", "Bearer "+c.Token)
+        if payload != nil </span><span class="cov6" title="27">{
                 req.Header.Set("Content-Type", "application/json")
         }</span>
-        <span class="cov8" title="91">h := c.HTTP
-        if h == nil </span><span class="cov8" title="91">{
+        <span class="cov8" title="104">h := c.HTTP
+        if h == nil </span><span class="cov8" title="104">{
                 h = &amp;http.Client{Timeout: 15 * time.Second}
         }</span>
-        <span class="cov8" title="91">resp, err := h.Do(req)
+        <span class="cov8" title="104">resp, err := h.Do(req)
         if err != nil </span><span class="cov1" title="1">{
                 return 0, nil, nil, err
         }</span>
-        <span class="cov8" title="90">defer func() </span><span class="cov8" title="90">{ _ = resp.Body.Close() }</span>()
-        <span class="cov8" title="90">out, err := io.ReadAll(io.LimitReader(resp.Body, 1&lt;&lt;20))
+        <span class="cov8" title="103">defer func() </span><span class="cov8" title="103">{ _ = resp.Body.Close() }</span>()
+        <span class="cov8" title="103">out, err := io.ReadAll(io.LimitReader(resp.Body, 1&lt;&lt;20))
         return resp.StatusCode, resp.Header, out, err</span>
 }
 
