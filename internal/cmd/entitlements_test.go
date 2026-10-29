@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -332,5 +333,51 @@ func TestEntitlementsIsRegisteredOnTheRootCommand(t *testing.T) {
 	c, _, err := rootCmd.Find([]string{"entitlements", "seed"})
 	if err != nil || c.Name() != "seed" {
 		t.Errorf("find = %v, %v", c, err)
+	}
+}
+
+func TestEntitlementsSeedReplacePricesNeedsPrices(t *testing.T) {
+	e := newEntServer(t)
+	e.withSession(t, "t", nil)
+	_, err := runSeed(seedCommand(t, "file", writeTemp(t, "seed.json", entSeed), "replace-prices", "true"))
+	if exitCode(err) != 2 || !strings.Contains(err.Error(), "--prices") {
+		t.Errorf("err = %v (exit %d)", err, exitCode(err))
+	}
+	if len(e.requests) != 0 {
+		t.Errorf("requests = %v", e.requests)
+	}
+}
+
+func TestEntitlementsSeedReplacesAnExistingPriceAndSaysSo(t *testing.T) {
+	for _, dry := range []bool{false, true} {
+		t.Run(fmt.Sprintf("dry-run=%v", dry), func(t *testing.T) {
+			e := newEntServer(t)
+			e.products = `[{"id":"p","name":"P","billing":"one_off","stripe_price_id":"members_10","entitlements":{"a.b":1}}]`
+			e.withSession(t, "t", nil)
+			args := []string{"file", writeTemp(t, "seed.json", entSeed), "prices", writeTemp(t, "prices.json", `{"products":{"p":"price_real"}}`), "replace-prices", "true"}
+			if dry {
+				args = append(args, "dry-run", "true")
+			}
+			out, err := runSeed(seedCommand(t, args...))
+			if err != nil {
+				t.Fatalf("err = %v\n%s", err, out)
+			}
+			puts := 0
+			for _, r := range e.requests {
+				if r == "PUT /admin/products/p" {
+					puts++
+				}
+			}
+			verb := "replaced"
+			if dry {
+				verb = "would replace"
+			}
+			if !strings.Contains(out, verb+" price p (members_10 -> price_real)") {
+				t.Errorf("output:\n%s", out)
+			}
+			if (puts == 1) == dry {
+				t.Errorf("PUT count = %d with dry-run=%v", puts, dry)
+			}
+		})
 	}
 }

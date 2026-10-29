@@ -15,10 +15,11 @@ import (
 var entitlementsSleep func(ctx context.Context, d time.Duration) error
 
 var (
-	flagEntitlementsSeedFile   string
-	flagEntitlementsSeedPrices string
-	flagEntitlementsSeedDryRun bool
-	flagEntitlementsSeedDelay  time.Duration
+	flagEntitlementsSeedFile    string
+	flagEntitlementsSeedPrices  string
+	flagEntitlementsSeedDryRun  bool
+	flagEntitlementsSeedDelay   time.Duration
+	flagEntitlementsSeedReplace bool
 )
 
 // newEntitlementsCommand builds the entitlements namespace. Only `seed` lives here today.
@@ -37,7 +38,8 @@ func newEntitlementsCommand() *cobra.Command {
 			"Create-only: an existing key, tier, or product is left exactly as it is, and an\n" +
 			"already-set default tier is not changed. --prices applies a per-environment overlay\n" +
 			"of Stripe price IDs: a price is set only where the product has none, and a different\n" +
-			"existing price is reported as skipped. The seed and price files live in the\n" +
+			"existing price is reported as skipped unless --replace-prices is given, which swaps\n" +
+			"just that price ID (dry-run prints \"would replace\"). The seed and price files live in the\n" +
 			"entitlements-api repo (seed/initiative.json, seed/prices.dev.json).\n\n" +
 			"  sweetrpg entitlements seed --file seed/initiative.json --prices seed/prices.dev.json --dry-run",
 		Args: cobra.NoArgs,
@@ -48,6 +50,8 @@ func newEntitlementsCommand() *cobra.Command {
 	seed.Flags().BoolVar(&flagEntitlementsSeedDryRun, "dry-run", false, "report what would change without writing")
 	seed.Flags().DurationVar(&flagEntitlementsSeedDelay, "delay", entitlements.DefaultDelay,
 		"pause between requests, to stay under the service's rate limit")
+	seed.Flags().BoolVar(&flagEntitlementsSeedReplace, "replace-prices", false,
+		"replace an existing, different Stripe price ID with the one in --prices (default: report it as skipped)")
 	_ = seed.MarkFlagRequired("file")
 	ent.AddCommand(seed)
 	return ent
@@ -56,6 +60,9 @@ func newEntitlementsCommand() *cobra.Command {
 func runEntitlementsSeed(cmd *cobra.Command, _ []string) error {
 	if flagCurl {
 		return usageErr("--curl is not supported for seed: it makes requests that depend on earlier responses")
+	}
+	if flagEntitlementsSeedReplace && flagEntitlementsSeedPrices == "" {
+		return usageErr("--replace-prices needs --prices")
 	}
 	doc, overlay, err := readSeedFiles(flagEntitlementsSeedFile, flagEntitlementsSeedPrices)
 	if err != nil {
@@ -73,7 +80,7 @@ func runEntitlementsSeed(cmd *cobra.Command, _ []string) error {
 
 	client := &entitlements.Client{
 		BaseURL: baseURL, Token: token, HTTP: &http.Client{Timeout: 30 * time.Second},
-		Delay: flagEntitlementsSeedDelay, Sleep: entitlementsSleep,
+		Delay: flagEntitlementsSeedDelay, Sleep: entitlementsSleep, ReplacePrices: flagEntitlementsSeedReplace,
 		Logf: func(format string, args ...any) { cmd.PrintErrf(format+"\n", args...) },
 	}
 	report, err := client.Load(cmd.Context(), doc, overlay, flagEntitlementsSeedDryRun)
@@ -85,6 +92,13 @@ func runEntitlementsSeed(cmd *cobra.Command, _ []string) error {
 	}
 	for _, l := range report.Skipped {
 		cmd.Println("skipped ", l)
+	}
+	verb := "replaced"
+	if flagEntitlementsSeedDryRun {
+		verb = "would replace"
+	}
+	for _, l := range report.Replaced {
+		cmd.Println(verb, l)
 	}
 	return err
 }
