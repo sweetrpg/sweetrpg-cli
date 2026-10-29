@@ -14,7 +14,8 @@ var rootCmd = &cobra.Command{
 	Short: "Command-line client for the SweetRPG platform",
 	Long: "Manage SweetRPG platform services from one authenticated session.\n\n" +
 		"  sweetrpg catalog ...      catalog records: volumes, publishers, studios, ...\n" +
-		"  sweetrpg api ...          generic authenticated request against any service\n\n" +
+		"  sweetrpg api ...          generic authenticated request against any service\n" +
+		"  sweetrpg entitlements ... entitlements catalog (seed)\n\n" +
 		"Shell completion: sweetrpg completion [bash|zsh|fish|powershell]\n" +
 		"Exit codes: 0 success, 1 error, 2 usage, 3 authentication.",
 }
@@ -57,6 +58,7 @@ func buildTree() {
 		catalogCmd.AddCommand(newImportCommand())
 		rootCmd.AddCommand(catalogCmd)
 		rootCmd.AddCommand(newAPICommand())
+		rootCmd.AddCommand(newEntitlementsCommand())
 		rootCmd.AddCommand(newGameRoomCommand())
 		rootCmd.AddCommand(newDTRPGCommand())
 		rootCmd.AddCommand(newVersionCommand())

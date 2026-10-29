@@ -217,6 +217,25 @@ because no catalog volume matches yet (with their titles), so you understand why
 DriveThruRPG library may not fully populate your Game Room library. `game-room import dtrpg
 logout` deletes the stored key.
 
+## Loading the entitlements catalog
+
+`entitlements seed` loads a catalog seed file through entitlements-api's admin API, as you (your
+session's access token is the bearer, so the service's admin role check applies). The seed and
+price files live in the entitlements-api repo (`seed/initiative.json`, `seed/prices.dev.json`);
+the CLI embeds no catalog data.
+
+```bash
+sweetrpg entitlements seed --file seed/initiative.json --prices seed/prices.dev.json --dry-run
+sweetrpg entitlements seed --file seed/initiative.json --prices seed/prices.dev.json
+```
+
+It only creates what is missing: an existing key, tier, or product is left as it is, and an
+already-set default tier is kept. `--prices` sets a Stripe price ID only where a product has none;
+a different existing price is reported as `skipped`. The service URL comes from
+`SWEETRPG_ENTITLEMENTS_API_URL` or `services.entitlements` in the config file (default path
+`/api/0/entitlements`). `--curl` is not supported here because later requests depend on earlier
+responses.
+
 ## `sweetrpg api`: generic authenticated requests
 
 For endpoints the typed `catalog` commands don't cover, `api` sends an authenticated request
