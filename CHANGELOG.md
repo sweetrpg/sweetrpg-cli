@@ -1,3 +1,10 @@
+
+## 0.5.0 - 2026-10-29
+
+### Added
+- Add the entitlements seed command
+
+
 ## Unreleased
 
 No changes yet.
