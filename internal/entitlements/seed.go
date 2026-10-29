@@ -11,7 +11,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"slices"
+	"net/url"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -74,6 +75,17 @@ type Report struct {
 	Skipped []string
 }
 
+// Pacing and retry defaults. The service's standard rate limit is 30 requests per 60 seconds per
+// client, and it answers 429 without a Retry-After header, so a rate-limited request waits out an
+// exponential backoff that reaches a full window.
+const (
+	DefaultDelay      = 300 * time.Millisecond
+	DefaultMaxRetries = 6
+	baseBackoff       = 5 * time.Second
+	maxBackoff        = 60 * time.Second
+	maxRetryAfter     = 2 * time.Minute
+)
+
 // Client talks to a running entitlements-api admin API.
 type Client struct {
 	// BaseURL includes any ingress prefix, e.g. https://host/api/1/entitlements.
@@ -81,36 +93,173 @@ type Client struct {
 	// Token is an administrator's bearer token. It is only ever sent, never logged.
 	Token string
 	HTTP  *http.Client
+	// Delay is the pause before each request after the first, to stay under the rate limit.
+	Delay time.Duration
+	// MaxRetries bounds how many times one request is retried after a 429.
+	MaxRetries int
+	// Logf receives progress notes such as a rate-limit wait. Nil discards them.
+	Logf func(format string, args ...any)
+	// Sleep waits for d or until ctx ends; nil uses a real timer. Tests replace it.
+	Sleep func(ctx context.Context, d time.Duration) error
+
+	sent bool
+}
+
+// state is what the service already holds, read once with a handful of list calls instead of one
+// probe per row.
+type state struct {
+	keys     map[string]bool
+	tiers    map[string]bool
+	products map[string]liveProduct
+	defTier  string
 }
 
 // Load creates what is missing: keys, tiers, the default tier (only when none is set), then
-// products. It never overwrites an existing row, so re-running it cannot undo an administrator's
-// edit or clear a Stripe price ID added after the first load. DryRun reports without writing.
-func (c *Client) Load(ctx context.Context, d *Doc, dryRun bool) (*Report, error) {
+// products, each carrying its overlay price when it has one. An existing product that has no
+// price gets the overlay price; one with a different price is left and reported as skipped. It
+// never overwrites anything else, so re-running it cannot undo an administrator's edit. prices may
+// be nil. DryRun reports without writing.
+func (c *Client) Load(ctx context.Context, d *Doc, prices *Prices, dryRun bool) (*Report, error) {
 	r := &Report{}
+	st, err := c.readState(ctx)
+	if err != nil {
+		return r, err
+	}
 	for _, k := range d.Keys {
-		if err := c.create(ctx, r, "key "+k.Key, "/admin/keys", k, dryRun); err != nil {
+		if err := c.create(ctx, r, st.keys[k.Key], "key "+k.Key, "/admin/keys", k, dryRun); err != nil {
 			return r, err
 		}
 	}
 	for _, t := range d.Tiers {
-		if err := c.create(ctx, r, "tier "+t.ID, "/admin/tiers", t, dryRun); err != nil {
+		if err := c.create(ctx, r, st.tiers[t.ID], "tier "+t.ID, "/admin/tiers", t, dryRun); err != nil {
 			return r, err
 		}
 	}
-	if err := c.setDefaultTier(ctx, r, d.DefaultTier, dryRun); err != nil {
+	if err := c.setDefaultTier(ctx, r, st.defTier, d.DefaultTier, dryRun); err != nil {
 		return r, err
 	}
 	for _, p := range d.Products {
-		if err := c.create(ctx, r, "product "+p.ID, "/admin/products", p, dryRun); err != nil {
+		if lp, ok := st.products[p.ID]; ok {
+			if err := c.applyPrice(ctx, r, lp, prices.priceFor(p.ID), dryRun); err != nil {
+				return r, err
+			}
+			continue
+		}
+		p.StripePriceID = prices.priceFor(p.ID)
+		if err := c.create(ctx, r, false, "product "+p.ID, "/admin/products", p, dryRun); err != nil {
 			return r, err
 		}
 	}
-	return r, nil
+	return r, prices.checkKnown(d, st)
 }
 
-func (c *Client) create(ctx context.Context, r *Report, label, path string, body any, dryRun bool) error {
-	if dryRun {
+func (p *Prices) priceFor(id string) string {
+	if p == nil {
+		return ""
+	}
+	return p.Products[id]
+}
+
+// checkKnown rejects an overlay entry that names a product that is neither in the seed nor already
+// live, which would otherwise be silently ignored.
+func (p *Prices) checkKnown(d *Doc, st *state) error {
+	if p == nil {
+		return nil
+	}
+	seeded := map[string]bool{}
+	for _, pr := range d.Products {
+		seeded[pr.ID] = true
+	}
+	for id := range p.Products {
+		if _, live := st.products[id]; !seeded[id] && !live {
+			return fmt.Errorf("prices: product %s is not in the seed and does not exist", id)
+		}
+	}
+	return nil
+}
+
+func (c *Client) readState(ctx context.Context) (*state, error) {
+	st := &state{keys: map[string]bool{}, tiers: map[string]bool{}, products: map[string]liveProduct{}}
+	var keys []struct {
+		Key string `json:"key"`
+	}
+	if err := c.list(ctx, "/admin/keys", &keys); err != nil {
+		return nil, err
+	}
+	for _, k := range keys {
+		st.keys[k.Key] = true
+	}
+	var tiers []struct {
+		ID string `json:"id"`
+	}
+	if err := c.list(ctx, "/admin/tiers", &tiers); err != nil {
+		return nil, err
+	}
+	for _, t := range tiers {
+		st.tiers[t.ID] = true
+	}
+	var products []liveProduct
+	if err := c.list(ctx, "/admin/products", &products); err != nil {
+		return nil, err
+	}
+	for _, p := range products {
+		st.products[p.ID] = p
+	}
+	var def struct {
+		ID string `json:"id"`
+	}
+	if err := c.getJSON(ctx, "/admin/default-tier", &def); err != nil {
+		return nil, err
+	}
+	st.defTier = def.ID
+	return st, nil
+}
+
+// listPage is the admin API's largest page.
+const listPage = 200
+
+// list reads every row of a collection, paging only if a page comes back full.
+func (c *Client) list(ctx context.Context, path string, into any) error {
+	var all []json.RawMessage
+	for skip := 0; ; skip += listPage {
+		var page []json.RawMessage
+		if err := c.getJSON(ctx, fmt.Sprintf("%s?limit=%d&skip=%d", path, listPage, skip), &page); err != nil {
+			return err
+		}
+		all = append(all, page...)
+		if len(page) < listPage {
+			break
+		}
+	}
+	b, err := json.Marshal(all)
+	if err != nil {
+		return err
+	}
+	return json.Unmarshal(b, into)
+}
+
+func (c *Client) getJSON(ctx context.Context, path string, into any) error {
+	status, body, err := c.do(ctx, http.MethodGet, path, nil)
+	if err != nil {
+		return fmt.Errorf("reading %s: %w", path, err)
+	}
+	if status != http.StatusOK {
+		return apiError("reading "+path, status, body)
+	}
+	if err := json.Unmarshal(body, into); err != nil {
+		return fmt.Errorf("reading %s: %w", path, err)
+	}
+	return nil
+}
+
+// create posts a row unless it already exists. A 409 from a row created since the state was read
+// is also "exists".
+func (c *Client) create(ctx context.Context, r *Report, exists bool, label, path string, body any, dryRun bool) error {
+	switch {
+	case exists:
+		r.Existing = append(r.Existing, label)
+		return nil
+	case dryRun:
 		r.Created = append(r.Created, label)
 		return nil
 	}
@@ -123,27 +272,17 @@ func (c *Client) create(ctx context.Context, r *Report, label, path string, body
 	case status == http.StatusConflict:
 		r.Existing = append(r.Existing, label)
 	default:
-		return fmt.Errorf("seed %s: status %d: %s", label, status, strings.TrimSpace(string(resp)))
+		return apiError("seed "+label, status, resp)
 	}
 	return nil
 }
 
-func (c *Client) setDefaultTier(ctx context.Context, r *Report, id string, dryRun bool) error {
-	if id == "" {
+func (c *Client) setDefaultTier(ctx context.Context, r *Report, current, want string, dryRun bool) error {
+	if want == "" {
 		return nil
 	}
-	label := "default tier " + id
-	status, resp, err := c.do(ctx, http.MethodGet, "/admin/default-tier", nil)
-	if err != nil || status != http.StatusOK {
-		return fmt.Errorf("seed %s: reading current default: status %d err %v", label, status, err)
-	}
-	var cur struct {
-		ID string `json:"id"`
-	}
-	if err := json.Unmarshal(resp, &cur); err != nil {
-		return fmt.Errorf("seed %s: %w", label, err)
-	}
-	if cur.ID != "" {
+	label := "default tier " + want
+	if current != "" {
 		r.Existing = append(r.Existing, label)
 		return nil
 	}
@@ -151,29 +290,96 @@ func (c *Client) setDefaultTier(ctx context.Context, r *Report, id string, dryRu
 		r.Created = append(r.Created, label)
 		return nil
 	}
-	status, resp, err = c.do(ctx, http.MethodPut, "/admin/default-tier", map[string]string{"id": id})
-	if err != nil || status != http.StatusNoContent {
-		return fmt.Errorf("seed %s: status %d: %s err %v", label, status, strings.TrimSpace(string(resp)), err)
+	status, resp, err := c.do(ctx, http.MethodPut, "/admin/default-tier", map[string]string{"id": want})
+	if err != nil {
+		return fmt.Errorf("seed %s: %w", label, err)
+	}
+	if status != http.StatusNoContent {
+		return apiError("seed "+label, status, resp)
 	}
 	r.Created = append(r.Created, label)
 	return nil
 }
 
+// applyPrice sets the overlay price on an existing product that has none. The same price is
+// reported as existing; a different one is left alone, since replacing a live price is deliberate.
+func (c *Client) applyPrice(ctx context.Context, r *Report, lp liveProduct, price string, dryRun bool) error {
+	switch {
+	case price == "":
+		r.Existing = append(r.Existing, "product "+lp.ID)
+		return nil
+	case lp.StripePriceID == price:
+		r.Existing = append(r.Existing, "product "+lp.ID, "price "+lp.ID)
+		return nil
+	case lp.StripePriceID != "":
+		r.Existing = append(r.Existing, "product "+lp.ID)
+		r.Skipped = append(r.Skipped, "price "+lp.ID+" (already set to a different price)")
+		return nil
+	}
+	if !dryRun {
+		lp.StripePriceID = price
+		status, resp, err := c.do(ctx, http.MethodPut, "/admin/products/"+url.PathEscape(lp.ID), lp)
+		if err != nil {
+			return fmt.Errorf("prices %s: %w", lp.ID, err)
+		}
+		if status != http.StatusOK {
+			return apiError("prices "+lp.ID, status, resp)
+		}
+	}
+	r.Existing = append(r.Existing, "product "+lp.ID)
+	r.Created = append(r.Created, "price "+lp.ID)
+	return nil
+}
+
+// apiError describes an unexpected response with its body, which carries the service's message.
+func apiError(what string, status int, body []byte) error {
+	return fmt.Errorf("%s: status %d: %s", what, status, strings.TrimSpace(string(body)))
+}
+
+// do sends one request, pausing first (pacing) and retrying a 429 with backoff. It returns the
+// final status and body; only transport failures and exhausted context are errors.
 func (c *Client) do(ctx context.Context, method, path string, body any) (int, []byte, error) {
-	var rd io.Reader
+	var payload []byte
 	if body != nil {
 		b, err := json.Marshal(body)
 		if err != nil {
 			return 0, nil, err
 		}
-		rd = bytes.NewReader(b)
+		payload = b
+	}
+	for attempt := 0; ; attempt++ {
+		if c.sent && c.Delay > 0 {
+			if err := c.sleep(ctx, c.Delay); err != nil {
+				return 0, nil, err
+			}
+		}
+		c.sent = true
+		status, header, out, err := c.once(ctx, method, path, payload)
+		if err != nil || status != http.StatusTooManyRequests {
+			return status, out, err
+		}
+		if attempt >= c.maxRetries() {
+			return status, out, fmt.Errorf("rate limited after %d retries: %s", attempt, strings.TrimSpace(string(out)))
+		}
+		wait := retryWait(header, attempt, time.Now())
+		c.logf("rate limited by the service; waiting %s before retry %d of %d", wait.Round(time.Second), attempt+1, c.maxRetries())
+		if err := c.sleep(ctx, wait); err != nil {
+			return 0, nil, err
+		}
+	}
+}
+
+func (c *Client) once(ctx context.Context, method, path string, payload []byte) (int, http.Header, []byte, error) {
+	var rd io.Reader
+	if payload != nil {
+		rd = bytes.NewReader(payload)
 	}
 	req, err := http.NewRequestWithContext(ctx, method, strings.TrimRight(c.BaseURL, "/")+path, rd)
 	if err != nil {
-		return 0, nil, err
+		return 0, nil, nil, err
 	}
 	req.Header.Set("Authorization", "Bearer "+c.Token)
-	if body != nil {
+	if payload != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
 	h := c.HTTP
@@ -182,11 +388,62 @@ func (c *Client) do(ctx context.Context, method, path string, body any) (int, []
 	}
 	resp, err := h.Do(req)
 	if err != nil {
-		return 0, nil, err
+		return 0, nil, nil, err
 	}
 	defer func() { _ = resp.Body.Close() }()
 	out, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-	return resp.StatusCode, out, err
+	return resp.StatusCode, resp.Header, out, err
+}
+
+func (c *Client) maxRetries() int {
+	if c.MaxRetries <= 0 {
+		return DefaultMaxRetries
+	}
+	return c.MaxRetries
+}
+
+func (c *Client) logf(format string, args ...any) {
+	if c.Logf != nil {
+		c.Logf(format, args...)
+	}
+}
+
+func (c *Client) sleep(ctx context.Context, d time.Duration) error {
+	if c.Sleep != nil {
+		return c.Sleep(ctx, d)
+	}
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-t.C:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+// retryWait chooses how long to wait after a 429: Retry-After (seconds or an HTTP date) if sent,
+// else the time until X-RateLimit-Reset (epoch seconds), else exponential backoff by attempt.
+// The result is never shorter than a second or longer than maxRetryAfter.
+func retryWait(h http.Header, attempt int, now time.Time) time.Duration {
+	wait := backoff(attempt)
+	if v := strings.TrimSpace(h.Get("Retry-After")); v != "" {
+		if secs, err := strconv.Atoi(v); err == nil {
+			wait = time.Duration(secs) * time.Second
+		} else if at, err := http.ParseTime(v); err == nil {
+			wait = at.Sub(now)
+		}
+	} else if v := strings.TrimSpace(h.Get("X-RateLimit-Reset")); v != "" {
+		if epoch, err := strconv.ParseInt(v, 10, 64); err == nil {
+			wait = time.Unix(epoch, 0).Sub(now)
+		}
+	}
+	return min(max(wait, time.Second), maxRetryAfter)
+}
+
+func backoff(attempt int) time.Duration {
+	d := baseBackoff << min(attempt, 10)
+	return min(d, maxBackoff)
 }
 
 // Prices is a per-environment overlay mapping product IDs to Stripe price IDs. Price IDs differ
@@ -223,60 +480,4 @@ type liveProduct struct {
 	PlanGroup     string          `json:"plan_group,omitempty"`
 	StripePriceID string          `json:"stripe_price_id,omitempty"`
 	Entitlements  json.RawMessage `json:"entitlements"`
-}
-
-// ApplyPrices sets each overlay price on its product when the product has none. It works on
-// products that already exist, which Load never touches. A product that already has the same
-// price is reported as such; one with a different price is left alone and reported, since
-// replacing a live price is a deliberate act, not something a seed re-run should do.
-func (c *Client) ApplyPrices(ctx context.Context, p *Prices, dryRun bool, r *Report) error {
-	status, body, err := c.do(ctx, http.MethodGet, "/admin/products?limit=200", nil)
-	if err != nil || status != http.StatusOK {
-		return fmt.Errorf("prices: listing products: status %d err %v", status, err)
-	}
-	var live []liveProduct
-	if err := json.Unmarshal(body, &live); err != nil {
-		return fmt.Errorf("prices: %w", err)
-	}
-	byID := make(map[string]liveProduct, len(live))
-	for _, lp := range live {
-		byID[lp.ID] = lp
-	}
-	ids := make([]string, 0, len(p.Products))
-	for id := range p.Products {
-		ids = append(ids, id)
-	}
-	slices.Sort(ids)
-	for _, id := range ids {
-		if err := c.applyPrice(ctx, r, byID, id, p.Products[id], dryRun); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func (c *Client) applyPrice(ctx context.Context, r *Report, byID map[string]liveProduct, id, price string, dryRun bool) error {
-	lp, ok := byID[id]
-	switch {
-	case !ok && dryRun:
-		r.Created = append(r.Created, "price "+id+" (product not created yet)")
-		return nil
-	case !ok:
-		return fmt.Errorf("prices: product %s does not exist; load the seed first", id)
-	case lp.StripePriceID == price:
-		r.Existing = append(r.Existing, "price "+id)
-		return nil
-	case lp.StripePriceID != "":
-		r.Skipped = append(r.Skipped, "price "+id+" (already set to a different price)")
-		return nil
-	}
-	if !dryRun {
-		lp.StripePriceID = price
-		status, resp, err := c.do(ctx, http.MethodPut, "/admin/products/"+id, lp)
-		if err != nil || status != http.StatusOK {
-			return fmt.Errorf("prices: %s: status %d: %s err %v", id, status, strings.TrimSpace(string(resp)), err)
-		}
-	}
-	r.Created = append(r.Created, "price "+id)
-	return nil
 }

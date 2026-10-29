@@ -1,4 +1,11 @@
 
+## 0.5.1 - 2026-10-29
+
+### Fixed
+- Retry on rate limits and cut the seed's request count
+
+
+
 ## 0.5.0 - 2026-10-29
 
 ### Added

@@ -236,6 +236,12 @@ a different existing price is reported as `skipped`. The service URL comes from
 `/api/0/entitlements`). `--curl` is not supported here because later requests depend on earlier
 responses.
 
+The service rate-limits admin routes per client (30 requests per 60 seconds by default). The
+command reads what exists with four list calls, then sends only the writes that are needed (a full
+first load is 25 requests; a re-run on a loaded service is 4), pauses `--delay` (default 300ms)
+between requests, and on HTTP 429 waits and retries with backoff, honoring `Retry-After` when the
+service sends it, up to 6 retries, printing a note each time it waits.
+
 ## `sweetrpg api`: generic authenticated requests
 
 For endpoints the typed `catalog` commands don't cover, `api` sends an authenticated request
