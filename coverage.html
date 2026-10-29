@@ -95,39 +95,43 @@
 				
 				<option value="file19">github.com/sweetrpg/sweetrpg-cli/internal/cmd/entities.go (88.5%)</option>
 				
-				<option value="file20">github.com/sweetrpg/sweetrpg-cli/internal/cmd/entity_table.go (49.5%)</option>
+				<option value="file20">github.com/sweetrpg/sweetrpg-cli/internal/cmd/entitlements.go (95.6%)</option>
 				
-				<option value="file21">github.com/sweetrpg/sweetrpg-cli/internal/cmd/format.go (53.8%)</option>
+				<option value="file21">github.com/sweetrpg/sweetrpg-cli/internal/cmd/entity_table.go (49.5%)</option>
 				
-				<option value="file22">github.com/sweetrpg/sweetrpg-cli/internal/cmd/gameroom.go (79.0%)</option>
+				<option value="file22">github.com/sweetrpg/sweetrpg-cli/internal/cmd/format.go (53.8%)</option>
 				
-				<option value="file23">github.com/sweetrpg/sweetrpg-cli/internal/cmd/import.go (100.0%)</option>
+				<option value="file23">github.com/sweetrpg/sweetrpg-cli/internal/cmd/gameroom.go (79.0%)</option>
 				
-				<option value="file24">github.com/sweetrpg/sweetrpg-cli/internal/cmd/import_library.go (85.4%)</option>
+				<option value="file24">github.com/sweetrpg/sweetrpg-cli/internal/cmd/import.go (100.0%)</option>
 				
-				<option value="file25">github.com/sweetrpg/sweetrpg-cli/internal/cmd/link.go (88.9%)</option>
+				<option value="file25">github.com/sweetrpg/sweetrpg-cli/internal/cmd/import_library.go (85.4%)</option>
 				
-				<option value="file26">github.com/sweetrpg/sweetrpg-cli/internal/cmd/resolve.go (54.8%)</option>
+				<option value="file26">github.com/sweetrpg/sweetrpg-cli/internal/cmd/link.go (88.9%)</option>
 				
-				<option value="file27">github.com/sweetrpg/sweetrpg-cli/internal/cmd/root.go (94.4%)</option>
+				<option value="file27">github.com/sweetrpg/sweetrpg-cli/internal/cmd/resolve.go (54.8%)</option>
 				
-				<option value="file28">github.com/sweetrpg/sweetrpg-cli/internal/cmd/search.go (86.4%)</option>
+				<option value="file28">github.com/sweetrpg/sweetrpg-cli/internal/cmd/root.go (94.6%)</option>
 				
-				<option value="file29">github.com/sweetrpg/sweetrpg-cli/internal/cmd/version.go (60.9%)</option>
+				<option value="file29">github.com/sweetrpg/sweetrpg-cli/internal/cmd/search.go (86.4%)</option>
 				
-				<option value="file30">github.com/sweetrpg/sweetrpg-cli/internal/config/config.go (95.5%)</option>
+				<option value="file30">github.com/sweetrpg/sweetrpg-cli/internal/cmd/version.go (60.9%)</option>
 				
-				<option value="file31">github.com/sweetrpg/sweetrpg-cli/internal/dtrpg/cover.go (75.0%)</option>
+				<option value="file31">github.com/sweetrpg/sweetrpg-cli/internal/config/config.go (95.5%)</option>
 				
-				<option value="file32">github.com/sweetrpg/sweetrpg-cli/internal/dtrpg/keyring.go (40.9%)</option>
+				<option value="file32">github.com/sweetrpg/sweetrpg-cli/internal/dtrpg/cover.go (75.0%)</option>
 				
-				<option value="file33">github.com/sweetrpg/sweetrpg-cli/internal/dtrpg/mapping.go (96.9%)</option>
+				<option value="file33">github.com/sweetrpg/sweetrpg-cli/internal/dtrpg/keyring.go (40.9%)</option>
 				
-				<option value="file34">github.com/sweetrpg/sweetrpg-cli/internal/dtrpg/products.go (75.0%)</option>
+				<option value="file34">github.com/sweetrpg/sweetrpg-cli/internal/dtrpg/mapping.go (96.9%)</option>
 				
-				<option value="file35">github.com/sweetrpg/sweetrpg-cli/internal/dtrpg/session.go (87.5%)</option>
+				<option value="file35">github.com/sweetrpg/sweetrpg-cli/internal/dtrpg/products.go (75.0%)</option>
 				
-				<option value="file36">github.com/sweetrpg/sweetrpg-cli/internal/dtrpg/transport.go (100.0%)</option>
+				<option value="file36">github.com/sweetrpg/sweetrpg-cli/internal/dtrpg/session.go (87.5%)</option>
+				
+				<option value="file37">github.com/sweetrpg/sweetrpg-cli/internal/dtrpg/transport.go (100.0%)</option>
+				
+				<option value="file38">github.com/sweetrpg/sweetrpg-cli/internal/entitlements/seed.go (88.5%)</option>
 				
 				</select>
 			</div>
@@ -1843,13 +1847,13 @@ type ExitError struct {
         Err  error
 }
 
-func (e *ExitError) Error() string <span class="cov7" title="8">{ return e.Err.Error() }</span>
-func (e *ExitError) ExitCode() int <span class="cov10" title="15">{ return e.Code }</span>
+func (e *ExitError) Error() string <span class="cov7" title="9">{ return e.Err.Error() }</span>
+func (e *ExitError) ExitCode() int <span class="cov10" title="21">{ return e.Code }</span>
 func (e *ExitError) Unwrap() error <span class="cov0" title="0">{ return e.Err }</span>
 
 // authExit tags errors the user fixes by logging in again.
-func authExit(err error) error <span class="cov3" title="2">{
-        if auth.IsAuthRequired(err) </span><span class="cov3" title="2">{
+func authExit(err error) error <span class="cov4" title="3">{
+        if auth.IsAuthRequired(err) </span><span class="cov4" title="3">{
                 return &amp;ExitError{Code: 3, Err: err}
         }</span>
         <span class="cov0" title="0">return err</span>
@@ -2918,6 +2922,113 @@ func init() <span class="cov1" title="1">{
 		<pre class="file" id="file20" style="display: none">package cmd
 
 import (
+        "fmt"
+        "net/http"
+        "os"
+        "time"
+
+        "github.com/spf13/cobra"
+        "github.com/sweetrpg/sweetrpg-cli/internal/entitlements"
+)
+
+var (
+        flagEntitlementsSeedFile   string
+        flagEntitlementsSeedPrices string
+        flagEntitlementsSeedDryRun bool
+)
+
+// newEntitlementsCommand builds the entitlements namespace. Only `seed` lives here today.
+func newEntitlementsCommand() *cobra.Command <span class="cov9" title="13">{
+        ent := &amp;cobra.Command{
+                Use:   "entitlements",
+                Short: "Manage the SweetRPG entitlements catalog",
+        }
+        seed := &amp;cobra.Command{
+                Use:   "seed --file &lt;seed.json&gt; [--prices &lt;prices.json&gt;] [--dry-run]",
+                Short: "Load a catalog seed (and optional Stripe price overlay) through the admin API",
+                Long: "Load keys, tiers, the default tier, and products from a seed file through the\n" +
+                        "entitlements admin API, authenticated as you (the admin role is checked server-side).\n\n" +
+                        "Create-only: an existing key, tier, or product is left exactly as it is, and an\n" +
+                        "already-set default tier is not changed. --prices applies a per-environment overlay\n" +
+                        "of Stripe price IDs: a price is set only where the product has none, and a different\n" +
+                        "existing price is reported as skipped. The seed and price files live in the\n" +
+                        "entitlements-api repo (seed/initiative.json, seed/prices.dev.json).\n\n" +
+                        "  sweetrpg entitlements seed --file seed/initiative.json --prices seed/prices.dev.json --dry-run",
+                Args: cobra.NoArgs,
+                RunE: runEntitlementsSeed,
+        }
+        seed.Flags().StringVar(&amp;flagEntitlementsSeedFile, "file", "", "seed file (required)")
+        seed.Flags().StringVar(&amp;flagEntitlementsSeedPrices, "prices", "", "per-environment Stripe price overlay")
+        seed.Flags().BoolVar(&amp;flagEntitlementsSeedDryRun, "dry-run", false, "report what would change without writing")
+        _ = seed.MarkFlagRequired("file")
+        ent.AddCommand(seed)
+        return ent
+}</span>
+
+func runEntitlementsSeed(cmd *cobra.Command, _ []string) error <span class="cov8" title="11">{
+        if flagCurl </span><span class="cov1" title="1">{
+                return usageErr("--curl is not supported for seed: it makes requests that depend on earlier responses")
+        }</span>
+        <span class="cov8" title="10">doc, overlay, err := readSeedFiles(flagEntitlementsSeedFile, flagEntitlementsSeedPrices)
+        if err != nil </span><span class="cov5" title="4">{
+                return usageErr("%v", err)
+        }</span>
+
+        <span class="cov6" title="6">baseURL, tokens, err := resolveAPIRequest("entitlements")
+        if err != nil </span><span class="cov0" title="0">{
+                return err
+        }</span>
+        <span class="cov6" title="6">token, err := tokens(cmd.Context())
+        if err != nil </span><span class="cov1" title="1">{
+                return authExit(err)
+        }</span>
+
+        <span class="cov6" title="5">client := &amp;entitlements.Client{BaseURL: baseURL, Token: token, HTTP: &amp;http.Client{Timeout: 30 * time.Second}}
+        report, err := client.Load(cmd.Context(), doc, flagEntitlementsSeedDryRun)
+        if err == nil &amp;&amp; overlay != nil </span><span class="cov3" title="2">{
+                err = client.ApplyPrices(cmd.Context(), overlay, flagEntitlementsSeedDryRun, report)
+        }</span>
+        <span class="cov6" title="5">for _, l := range report.Created </span><span class="cov10" title="15">{
+                cmd.Println("created ", l)
+        }</span>
+        <span class="cov6" title="5">for _, l := range report.Existing </span><span class="cov4" title="3">{
+                cmd.Println("exists  ", l)
+        }</span>
+        <span class="cov6" title="5">for _, l := range report.Skipped </span><span class="cov0" title="0">{
+                cmd.Println("skipped ", l)
+        }</span>
+        <span class="cov6" title="5">return err</span>
+}
+
+// readSeedFiles parses the seed file and, when given, the price overlay. Problems here are the
+// caller's input, reported as usage errors.
+func readSeedFiles(seedPath, pricesPath string) (*entitlements.Doc, *entitlements.Prices, error) <span class="cov8" title="10">{
+        raw, err := os.ReadFile(seedPath)
+        if err != nil </span><span class="cov1" title="1">{
+                return nil, nil, err
+        }</span>
+        <span class="cov8" title="9">doc, err := entitlements.Parse(raw)
+        if err != nil </span><span class="cov1" title="1">{
+                return nil, nil, fmt.Errorf("%s: %w", seedPath, err)
+        }</span>
+        <span class="cov7" title="8">if pricesPath == "" </span><span class="cov5" title="4">{
+                return doc, nil, nil
+        }</span>
+        <span class="cov5" title="4">raw, err = os.ReadFile(pricesPath)
+        if err != nil </span><span class="cov1" title="1">{
+                return nil, nil, err
+        }</span>
+        <span class="cov4" title="3">overlay, err := entitlements.ParsePrices(raw)
+        if err != nil </span><span class="cov1" title="1">{
+                return nil, nil, fmt.Errorf("%s: %w", pricesPath, err)
+        }</span>
+        <span class="cov3" title="2">return doc, overlay, nil</span>
+}
+</pre>
+		
+		<pre class="file" id="file21" style="display: none">package cmd
+
+import (
         "strings"
 
         "github.com/sweetrpg/catalog-objects.go/vo"
@@ -3162,7 +3273,7 @@ func contributionDef() EntityDef[vo.ContributionVO] <span class="cov2" title="2"
 }
 </pre>
 		
-		<pre class="file" id="file21" style="display: none">package cmd
+		<pre class="file" id="file22" style="display: none">package cmd
 
 import (
         "encoding/json"
@@ -3353,7 +3464,7 @@ func isEmptyValue(v reflect.Value) bool <span class="cov9" title="64">{
 }
 </pre>
 		
-		<pre class="file" id="file22" style="display: none">package cmd
+		<pre class="file" id="file23" style="display: none">package cmd
 
 import (
         "bytes"
@@ -3622,7 +3733,7 @@ func printGameRoomImportSummary(cmd *cobra.Command, s gameRoomImportSummary, dry
 }
 </pre>
 		
-		<pre class="file" id="file23" style="display: none">package cmd
+		<pre class="file" id="file24" style="display: none">package cmd
 
 import (
         "github.com/spf13/cobra"
@@ -3667,7 +3778,7 @@ func newImportCommand() *cobra.Command <span class="cov8" title="1">{
 }</span>
 </pre>
 		
-		<pre class="file" id="file24" style="display: none">package cmd
+		<pre class="file" id="file25" style="display: none">package cmd
 
 import (
         "context"
@@ -4024,7 +4135,7 @@ func printSummary(cmd *cobra.Command, plan importPlan, s importSummary) <span cl
 }
 </pre>
 		
-		<pre class="file" id="file25" style="display: none">package cmd
+		<pre class="file" id="file26" style="display: none">package cmd
 
 import (
         "context"
@@ -4272,7 +4383,7 @@ func pointerIDs[T any](srcs []*T) []string <span class="cov6" title="8">{
 }
 </pre>
 		
-		<pre class="file" id="file26" style="display: none">package cmd
+		<pre class="file" id="file27" style="display: none">package cmd
 
 import (
         "context"
@@ -4396,7 +4507,7 @@ func confirmDelete(cmd *cobra.Command, entity, id string) error <span class="cov
 }
 </pre>
 		
-		<pre class="file" id="file27" style="display: none">package cmd
+		<pre class="file" id="file28" style="display: none">package cmd
 
 import (
         "errors"
@@ -4412,7 +4523,8 @@ var rootCmd = &amp;cobra.Command{
         Short: "Command-line client for the SweetRPG platform",
         Long: "Manage SweetRPG platform services from one authenticated session.\n\n" +
                 "  sweetrpg catalog ...      catalog records: volumes, publishers, studios, ...\n" +
-                "  sweetrpg api ...          generic authenticated request against any service\n\n" +
+                "  sweetrpg api ...          generic authenticated request against any service\n" +
+                "  sweetrpg entitlements ... entitlements catalog (seed)\n\n" +
                 "Shell completion: sweetrpg completion [bash|zsh|fish|powershell]\n" +
                 "Exit codes: 0 success, 1 error, 2 usage, 3 authentication.",
 }
@@ -4439,7 +4551,7 @@ var catalogCmd = &amp;cobra.Command{
 
 // buildTree attaches generated subcommands. It runs lazily (not in init) so
 // the entity registry is fully populated regardless of file init order.
-func buildTree() <span class="cov10" title="33">{
+func buildTree() <span class="cov10" title="34">{
         buildOnce.Do(func() </span><span class="cov1" title="1">{
                 rootCmd.PersistentFlags().StringVar(&amp;flagAPIURL, "api-url", "", "catalog API base URL (overrides env and config file)")
                 rootCmd.PersistentFlags().StringVar(&amp;flagAssetsWebURL, "assets-web-url", "", "assets-web base URL for asset uploads")
@@ -4455,6 +4567,7 @@ func buildTree() <span class="cov10" title="33">{
                 catalogCmd.AddCommand(newImportCommand())
                 rootCmd.AddCommand(catalogCmd)
                 rootCmd.AddCommand(newAPICommand())
+                rootCmd.AddCommand(newEntitlementsCommand())
                 rootCmd.AddCommand(newGameRoomCommand())
                 rootCmd.AddCommand(newDTRPGCommand())
                 rootCmd.AddCommand(newVersionCommand())
@@ -4498,12 +4611,12 @@ func classifyUsage(err error) error <span class="cov6" title="10">{
 }
 
 // usageErr tags a validation failure as a usage error (exit code 2).
-func usageErr(format string, args ...any) error <span class="cov6" title="9">{
+func usageErr(format string, args ...any) error <span class="cov7" title="14">{
         return &amp;ExitError{Code: 2, Err: fmt.Errorf(format, args...)}
 }</span>
 </pre>
 		
-		<pre class="file" id="file28" style="display: none">package cmd
+		<pre class="file" id="file29" style="display: none">package cmd
 
 import (
         "fmt"
@@ -4556,7 +4669,7 @@ Exact matches are preferred; otherwise every record containing the query is list
 }
 </pre>
 		
-		<pre class="file" id="file29" style="display: none">package cmd
+		<pre class="file" id="file30" style="display: none">package cmd
 
 import (
         "fmt"
@@ -4625,7 +4738,7 @@ func buildVersion() string <span class="cov3" title="3">{
 }
 </pre>
 		
-		<pre class="file" id="file30" style="display: none">// Package config resolves CLI configuration from flags, environment, and the
+		<pre class="file" id="file31" style="display: none">// Package config resolves CLI configuration from flags, environment, and the
 // config file. Only non-secret settings live in the file; tokens go to the OS
 // keychain.
 package config
@@ -4867,7 +4980,7 @@ func firstNonEmpty(values ...string) string <span class="cov8" title="48">{
 }
 </pre>
 		
-		<pre class="file" id="file31" style="display: none">package dtrpg
+		<pre class="file" id="file32" style="display: none">package dtrpg
 
 import (
         "context"
@@ -4945,7 +5058,7 @@ func FetchCover(ctx context.Context, httpClient *http.Client, url string) (*Cove
 }
 </pre>
 		
-		<pre class="file" id="file32" style="display: none">package dtrpg
+		<pre class="file" id="file33" style="display: none">package dtrpg
 
 import (
         "errors"
@@ -5027,7 +5140,7 @@ func (m *MemoryKeyStore) DeleteKey() error <span class="cov10" title="3">{
 }</span>
 </pre>
 		
-		<pre class="file" id="file33" style="display: none">package dtrpg
+		<pre class="file" id="file34" style="display: none">package dtrpg
 
 import (
         "strconv"
@@ -5201,7 +5314,7 @@ func deref(s *string) string <span class="cov10" title="6">{
 }
 </pre>
 		
-		<pre class="file" id="file34" style="display: none">package dtrpg
+		<pre class="file" id="file35" style="display: none">package dtrpg
 
 import (
         "context"
@@ -5306,7 +5419,7 @@ func (s *Session) listPageWithRetry(ctx context.Context, params library.LibraryI
 }
 </pre>
 		
-		<pre class="file" id="file35" style="display: none">package dtrpg
+		<pre class="file" id="file36" style="display: none">package dtrpg
 
 import (
         "context"
@@ -5353,7 +5466,7 @@ func NewSession(ctx context.Context, appKey, baseURL string) (*Session, error) <
 }
 </pre>
 		
-		<pre class="file" id="file36" style="display: none">package dtrpg
+		<pre class="file" id="file37" style="display: none">package dtrpg
 
 import (
         "net/http"
@@ -5394,6 +5507,290 @@ func (t *userAgentTransport) RoundTrip(req *http.Request) (*http.Response, error
                 req.Header.Set("User-Agent", userAgent)
         }</span>
         <span class="cov10" title="2">return t.base.RoundTrip(req)</span>
+}
+</pre>
+		
+		<pre class="file" id="file38" style="display: none">// Package entitlements loads an entitlements-api catalog seed through its admin API, the same
+// path an administrator uses, so every row is validated and audited. The seed and price files are
+// supplied by the caller (they live in the entitlements-api repo); this package holds no catalog
+// data.
+package entitlements
+
+import (
+        "bytes"
+        "context"
+        "encoding/json"
+        "fmt"
+        "io"
+        "net/http"
+        "slices"
+        "strings"
+        "time"
+)
+
+// Doc is a seed file. Stripe price IDs are left empty until prices exist in Stripe; set them
+// through the admin API afterwards.
+type Doc struct {
+        Keys        []Key     `json:"keys"`
+        DefaultTier string    `json:"default_tier"`
+        Tiers       []Tier    `json:"tiers"`
+        Products    []Product `json:"products"`
+}
+
+// Key mirrors the admin API's key body.
+type Key struct {
+        Key         string `json:"key"`
+        Type        string `json:"type"`
+        Description string `json:"description"`
+        TTLSeconds  int    `json:"ttl_seconds"`
+        Max         *int64 `json:"max,omitempty"`
+}
+
+// Tier mirrors the admin API's tier body.
+type Tier struct {
+        ID            string         `json:"id"`
+        Name          string         `json:"name"`
+        Description   string         `json:"description"`
+        Values        map[string]any `json:"values"`
+        StripePriceID string         `json:"stripe_price_id,omitempty"`
+}
+
+// Product mirrors the admin API's product body.
+type Product struct {
+        ID            string         `json:"id"`
+        Name          string         `json:"name"`
+        Description   string         `json:"description"`
+        Billing       string         `json:"billing"`
+        Repeatable    bool           `json:"repeatable,omitempty"`
+        PlanGroup     string         `json:"plan_group,omitempty"`
+        StripePriceID string         `json:"stripe_price_id,omitempty"`
+        Entitlements  map[string]any `json:"entitlements"`
+}
+
+// Parse decodes a seed file, rejecting unknown fields so a typo cannot silently drop data.
+func Parse(b []byte) (*Doc, error) <span class="cov3" title="2">{
+        dec := json.NewDecoder(bytes.NewReader(b))
+        dec.DisallowUnknownFields()
+        var d Doc
+        if err := dec.Decode(&amp;d); err != nil </span><span class="cov3" title="2">{
+                return nil, fmt.Errorf("seed: %w", err)
+        }</span>
+        <span class="cov0" title="0">return &amp;d, nil</span>
+}
+
+// Report says what a load did. Existing rows are left exactly as they are.
+type Report struct {
+        Created  []string
+        Existing []string
+        // Skipped rows were deliberately not changed.
+        Skipped []string
+}
+
+// Client talks to a running entitlements-api admin API.
+type Client struct {
+        // BaseURL includes any ingress prefix, e.g. https://host/api/1/entitlements.
+        BaseURL string
+        // Token is an administrator's bearer token. It is only ever sent, never logged.
+        Token string
+        HTTP  *http.Client
+}
+
+// Load creates what is missing: keys, tiers, the default tier (only when none is set), then
+// products. It never overwrites an existing row, so re-running it cannot undo an administrator's
+// edit or clear a Stripe price ID added after the first load. DryRun reports without writing.
+func (c *Client) Load(ctx context.Context, d *Doc, dryRun bool) (*Report, error) <span class="cov6" title="5">{
+        r := &amp;Report{}
+        for _, k := range d.Keys </span><span class="cov6" title="5">{
+                if err := c.create(ctx, r, "key "+k.Key, "/admin/keys", k, dryRun); err != nil </span><span class="cov3" title="2">{
+                        return r, err
+                }</span>
+        }
+        <span class="cov4" title="3">for _, t := range d.Tiers </span><span class="cov4" title="3">{
+                if err := c.create(ctx, r, "tier "+t.ID, "/admin/tiers", t, dryRun); err != nil </span><span class="cov0" title="0">{
+                        return r, err
+                }</span>
+        }
+        <span class="cov4" title="3">if err := c.setDefaultTier(ctx, r, d.DefaultTier, dryRun); err != nil </span><span class="cov0" title="0">{
+                return r, err
+        }</span>
+        <span class="cov4" title="3">for _, p := range d.Products </span><span class="cov4" title="3">{
+                if err := c.create(ctx, r, "product "+p.ID, "/admin/products", p, dryRun); err != nil </span><span class="cov0" title="0">{
+                        return r, err
+                }</span>
+        }
+        <span class="cov4" title="3">return r, nil</span>
+}
+
+func (c *Client) create(ctx context.Context, r *Report, label, path string, body any, dryRun bool) error <span class="cov8" title="11">{
+        if dryRun </span><span class="cov4" title="3">{
+                r.Created = append(r.Created, label)
+                return nil
+        }</span>
+        <span class="cov7" title="8">status, resp, err := c.do(ctx, http.MethodPost, path, body)
+        switch </span>{
+        case err != nil:<span class="cov1" title="1">
+                return fmt.Errorf("seed %s: %w", label, err)</span>
+        case status == http.StatusCreated:<span class="cov4" title="3">
+                r.Created = append(r.Created, label)</span>
+        case status == http.StatusConflict:<span class="cov4" title="3">
+                r.Existing = append(r.Existing, label)</span>
+        default:<span class="cov1" title="1">
+                return fmt.Errorf("seed %s: status %d: %s", label, status, strings.TrimSpace(string(resp)))</span>
+        }
+        <span class="cov6" title="6">return nil</span>
+}
+
+func (c *Client) setDefaultTier(ctx context.Context, r *Report, id string, dryRun bool) error <span class="cov4" title="3">{
+        if id == "" </span><span class="cov0" title="0">{
+                return nil
+        }</span>
+        <span class="cov4" title="3">label := "default tier " + id
+        status, resp, err := c.do(ctx, http.MethodGet, "/admin/default-tier", nil)
+        if err != nil || status != http.StatusOK </span><span class="cov0" title="0">{
+                return fmt.Errorf("seed %s: reading current default: status %d err %v", label, status, err)
+        }</span>
+        <span class="cov4" title="3">var cur struct {
+                ID string `json:"id"`
+        }
+        if err := json.Unmarshal(resp, &amp;cur); err != nil </span><span class="cov0" title="0">{
+                return fmt.Errorf("seed %s: %w", label, err)
+        }</span>
+        <span class="cov4" title="3">if cur.ID != "" </span><span class="cov1" title="1">{
+                r.Existing = append(r.Existing, label)
+                return nil
+        }</span>
+        <span class="cov3" title="2">if dryRun </span><span class="cov1" title="1">{
+                r.Created = append(r.Created, label)
+                return nil
+        }</span>
+        <span class="cov1" title="1">status, resp, err = c.do(ctx, http.MethodPut, "/admin/default-tier", map[string]string{"id": id})
+        if err != nil || status != http.StatusNoContent </span><span class="cov0" title="0">{
+                return fmt.Errorf("seed %s: status %d: %s err %v", label, status, strings.TrimSpace(string(resp)), err)
+        }</span>
+        <span class="cov1" title="1">r.Created = append(r.Created, label)
+        return nil</span>
+}
+
+func (c *Client) do(ctx context.Context, method, path string, body any) (int, []byte, error) <span class="cov10" title="18">{
+        var rd io.Reader
+        if body != nil </span><span class="cov8" title="11">{
+                b, err := json.Marshal(body)
+                if err != nil </span><span class="cov0" title="0">{
+                        return 0, nil, err
+                }</span>
+                <span class="cov8" title="11">rd = bytes.NewReader(b)</span>
+        }
+        <span class="cov10" title="18">req, err := http.NewRequestWithContext(ctx, method, strings.TrimRight(c.BaseURL, "/")+path, rd)
+        if err != nil </span><span class="cov0" title="0">{
+                return 0, nil, err
+        }</span>
+        <span class="cov10" title="18">req.Header.Set("Authorization", "Bearer "+c.Token)
+        if body != nil </span><span class="cov8" title="11">{
+                req.Header.Set("Content-Type", "application/json")
+        }</span>
+        <span class="cov10" title="18">h := c.HTTP
+        if h == nil </span><span class="cov10" title="18">{
+                h = &amp;http.Client{Timeout: 15 * time.Second}
+        }</span>
+        <span class="cov10" title="18">resp, err := h.Do(req)
+        if err != nil </span><span class="cov1" title="1">{
+                return 0, nil, err
+        }</span>
+        <span class="cov9" title="17">defer func() </span><span class="cov9" title="17">{ _ = resp.Body.Close() }</span>()
+        <span class="cov9" title="17">out, err := io.ReadAll(io.LimitReader(resp.Body, 1&lt;&lt;20))
+        return resp.StatusCode, out, err</span>
+}
+
+// Prices is a per-environment overlay mapping product IDs to Stripe price IDs. Price IDs differ
+// between Stripe test and live mode, so they live outside the seed.
+type Prices struct {
+        Products map[string]string `json:"products"`
+}
+
+// ParsePrices decodes an overlay, rejecting unknown fields and empty prices. A price ID is an
+// opaque string: Stripe generates price_... values, but one can be set by hand (members_10).
+func ParsePrices(b []byte) (*Prices, error) <span class="cov6" title="5">{
+        dec := json.NewDecoder(bytes.NewReader(b))
+        dec.DisallowUnknownFields()
+        var p Prices
+        if err := dec.Decode(&amp;p); err != nil </span><span class="cov3" title="2">{
+                return nil, fmt.Errorf("prices: %w", err)
+        }</span>
+        <span class="cov4" title="3">for id, price := range p.Products </span><span class="cov5" title="4">{
+                if price == "" || strings.TrimSpace(price) != price </span><span class="cov3" title="2">{
+                        return nil, fmt.Errorf("prices: %s: price ID must be a non-empty string without surrounding space", id)
+                }</span>
+        }
+        <span class="cov1" title="1">return &amp;p, nil</span>
+}
+
+// liveProduct is a product as the admin API returns it; Entitlements stays raw so it round-trips
+// exactly (including at_least objects).
+type liveProduct struct {
+        ID            string          `json:"id"`
+        Name          string          `json:"name"`
+        Description   string          `json:"description"`
+        Billing       string          `json:"billing"`
+        Repeatable    bool            `json:"repeatable"`
+        PlanGroup     string          `json:"plan_group,omitempty"`
+        StripePriceID string          `json:"stripe_price_id,omitempty"`
+        Entitlements  json.RawMessage `json:"entitlements"`
+}
+
+// ApplyPrices sets each overlay price on its product when the product has none. It works on
+// products that already exist, which Load never touches. A product that already has the same
+// price is reported as such; one with a different price is left alone and reported, since
+// replacing a live price is a deliberate act, not something a seed re-run should do.
+func (c *Client) ApplyPrices(ctx context.Context, p *Prices, dryRun bool, r *Report) error <span class="cov5" title="4">{
+        status, body, err := c.do(ctx, http.MethodGet, "/admin/products?limit=200", nil)
+        if err != nil || status != http.StatusOK </span><span class="cov0" title="0">{
+                return fmt.Errorf("prices: listing products: status %d err %v", status, err)
+        }</span>
+        <span class="cov5" title="4">var live []liveProduct
+        if err := json.Unmarshal(body, &amp;live); err != nil </span><span class="cov0" title="0">{
+                return fmt.Errorf("prices: %w", err)
+        }</span>
+        <span class="cov5" title="4">byID := make(map[string]liveProduct, len(live))
+        for _, lp := range live </span><span class="cov8" title="12">{
+                byID[lp.ID] = lp
+        }</span>
+        <span class="cov5" title="4">ids := make([]string, 0, len(p.Products))
+        for id := range p.Products </span><span class="cov7" title="7">{
+                ids = append(ids, id)
+        }</span>
+        <span class="cov5" title="4">slices.Sort(ids)
+        for _, id := range ids </span><span class="cov7" title="7">{
+                if err := c.applyPrice(ctx, r, byID, id, p.Products[id], dryRun); err != nil </span><span class="cov1" title="1">{
+                        return err
+                }</span>
+        }
+        <span class="cov4" title="3">return nil</span>
+}
+
+func (c *Client) applyPrice(ctx context.Context, r *Report, byID map[string]liveProduct, id, price string, dryRun bool) error <span class="cov7" title="7">{
+        lp, ok := byID[id]
+        switch </span>{
+        case !ok &amp;&amp; dryRun:<span class="cov1" title="1">
+                r.Created = append(r.Created, "price "+id+" (product not created yet)")
+                return nil</span>
+        case !ok:<span class="cov1" title="1">
+                return fmt.Errorf("prices: product %s does not exist; load the seed first", id)</span>
+        case lp.StripePriceID == price:<span class="cov1" title="1">
+                r.Existing = append(r.Existing, "price "+id)
+                return nil</span>
+        case lp.StripePriceID != "":<span class="cov1" title="1">
+                r.Skipped = append(r.Skipped, "price "+id+" (already set to a different price)")
+                return nil</span>
+        }
+        <span class="cov4" title="3">if !dryRun </span><span class="cov3" title="2">{
+                lp.StripePriceID = price
+                status, resp, err := c.do(ctx, http.MethodPut, "/admin/products/"+id, lp)
+                if err != nil || status != http.StatusOK </span><span class="cov0" title="0">{
+                        return fmt.Errorf("prices: %s: status %d: %s err %v", id, status, strings.TrimSpace(string(resp)), err)
+                }</span>
+        }
+        <span class="cov4" title="3">r.Created = append(r.Created, "price "+id)
+        return nil</span>
 }
 </pre>
 		
