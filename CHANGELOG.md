@@ -1,4 +1,11 @@
 
+## 0.6.0 - 2026-10-29
+
+### Added
+- Add --replace-prices to the seed command
+
+
+
 ## 0.5.1 - 2026-10-29
 
 ### Fixed
