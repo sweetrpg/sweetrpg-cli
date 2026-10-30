@@ -1,4 +1,11 @@
 
+## 0.6.1 - 2026-10-30
+
+### Fixed
+- Print usage only for usage errors and add API exit codes
+
+
+
 ## 0.6.0 - 2026-10-29
 
 ### Added

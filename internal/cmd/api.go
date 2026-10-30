@@ -151,7 +151,7 @@ func runAPI(cmd *cobra.Command, args []string) error {
 	}
 	cmd.Println(string(raw))
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return &ExitError{Code: 1, Err: fmt.Errorf("%s returned %d", flagAPIService, resp.StatusCode)}
+		return &ExitError{Code: exitForStatus(resp.StatusCode), Err: fmt.Errorf("%s returned %d", flagAPIService, resp.StatusCode)}
 	}
 	return nil
 }

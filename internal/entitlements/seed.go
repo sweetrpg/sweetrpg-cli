@@ -345,9 +345,21 @@ func (c *Client) applyPrice(ctx context.Context, r *Report, lp liveProduct, pric
 	return nil
 }
 
+// StatusError is an unexpected response from the service. It keeps the HTTP status so the CLI can
+// choose an exit code from it.
+type StatusError struct {
+	Msg    string
+	Status int
+}
+
+func (e *StatusError) Error() string { return e.Msg }
+
+// HTTPStatus is the response status.
+func (e *StatusError) HTTPStatus() int { return e.Status }
+
 // apiError describes an unexpected response with its body, which carries the service's message.
 func apiError(what string, status int, body []byte) error {
-	return fmt.Errorf("%s: status %d: %s", what, status, strings.TrimSpace(string(body)))
+	return &StatusError{Status: status, Msg: fmt.Sprintf("%s: status %d: %s", what, status, strings.TrimSpace(string(body)))}
 }
 
 // do sends one request, pausing first (pacing) and retrying a 429 with backoff. It returns the
@@ -373,7 +385,7 @@ func (c *Client) do(ctx context.Context, method, path string, body any) (int, []
 			return status, out, err
 		}
 		if attempt >= c.maxRetries() {
-			return status, out, fmt.Errorf("rate limited after %d retries: %s", attempt, strings.TrimSpace(string(out)))
+			return status, out, &StatusError{Status: status, Msg: fmt.Sprintf("rate limited after %d retries: %s", attempt, strings.TrimSpace(string(out)))}
 		}
 		wait := retryWait(header, attempt, time.Now())
 		c.logf("rate limited by the service; waiting %s before retry %d of %d", wait.Round(time.Second), attempt+1, c.maxRetries())
