@@ -272,7 +272,17 @@ defaults to `GET` with no body, `POST` when `--field`/`--raw-field` is present. 
 - Pass `--yes` to skip all interactive prompts; ambiguous name resolutions then fail instead of prompting. Deletes additionally require `--force` when stdin is not a TTY - `--yes` alone never deletes in a script.
 - Use `catalog view <type> <id> --json` for machine-readable output.
 - Pass `--curl` to print the equivalent cURL command(s) instead of calling the API. Nothing is sent; the bearer token is printed as `<redacted>`. Flows that need server data to continue (name resolution feeding later requests) stop after their first request, so pass IDs instead of names to see write requests directly.
-- Exit codes: `0` success, `1` general error, `2` usage error, `3` authentication failure.
+- Results and API response bodies go to stdout; the one-line error goes to stderr. Usage text is printed (after the error) only for usage errors, never when a valid call fails at runtime.
+- Exit codes:
+
+| Code | Meaning |
+| --- | --- |
+| `0` | Success |
+| `1` | General runtime error (network failure, unreadable config, anything not below) |
+| `2` | Usage error: bad or missing flag or argument, unknown command, input the CLI rejects |
+| `3` | Authentication: not logged in, session expired, or the API answered 401 |
+| `4` | The API answered with a client error (4xx other than 401), e.g. 403, 404, 409 `confirmation_required`, 429 after retries |
+| `5` | The API answered with a server error (5xx) |
 
 ## Shell Completion
 
