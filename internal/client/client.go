@@ -56,6 +56,9 @@ func (e *APIError) Error() string {
 	return fmt.Sprintf("%s returned %d %s: %s", e.service(), e.StatusCode, e.Code, e.Message)
 }
 
+// HTTPStatus is the response status, for exit-code classification.
+func (e *APIError) HTTPStatus() int { return e.StatusCode }
+
 func (e *APIError) service() string {
 	if e.Service == "" {
 		return "catalog-api"
