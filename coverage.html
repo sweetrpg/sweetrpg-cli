@@ -71,7 +71,7 @@
 				
 				<option value="file7">github.com/sweetrpg/sweetrpg-cli/internal/client/assets.go (90.0%)</option>
 				
-				<option value="file8">github.com/sweetrpg/sweetrpg-cli/internal/client/client.go (80.9%)</option>
+				<option value="file8">github.com/sweetrpg/sweetrpg-cli/internal/client/client.go (79.7%)</option>
 				
 				<option value="file9">github.com/sweetrpg/sweetrpg-cli/internal/client/entities.go (100.0%)</option>
 				
@@ -79,11 +79,11 @@
 				
 				<option value="file11">github.com/sweetrpg/sweetrpg-cli/internal/client/volume_create.go (0.0%)</option>
 				
-				<option value="file12">github.com/sweetrpg/sweetrpg-cli/internal/cmd/api.go (73.1%)</option>
+				<option value="file12">github.com/sweetrpg/sweetrpg-cli/internal/cmd/api.go (75.0%)</option>
 				
 				<option value="file13">github.com/sweetrpg/sweetrpg-cli/internal/cmd/assets.go (87.5%)</option>
 				
-				<option value="file14">github.com/sweetrpg/sweetrpg-cli/internal/cmd/auth.go (16.3%)</option>
+				<option value="file14">github.com/sweetrpg/sweetrpg-cli/internal/cmd/auth.go (18.6%)</option>
 				
 				<option value="file15">github.com/sweetrpg/sweetrpg-cli/internal/cmd/cover_display.go (84.6%)</option>
 				
@@ -111,7 +111,7 @@
 				
 				<option value="file27">github.com/sweetrpg/sweetrpg-cli/internal/cmd/resolve.go (54.8%)</option>
 				
-				<option value="file28">github.com/sweetrpg/sweetrpg-cli/internal/cmd/root.go (94.6%)</option>
+				<option value="file28">github.com/sweetrpg/sweetrpg-cli/internal/cmd/root.go (98.4%)</option>
 				
 				<option value="file29">github.com/sweetrpg/sweetrpg-cli/internal/cmd/search.go (86.4%)</option>
 				
@@ -131,7 +131,7 @@
 				
 				<option value="file37">github.com/sweetrpg/sweetrpg-cli/internal/dtrpg/transport.go (100.0%)</option>
 				
-				<option value="file38">github.com/sweetrpg/sweetrpg-cli/internal/entitlements/seed.go (91.2%)</option>
+				<option value="file38">github.com/sweetrpg/sweetrpg-cli/internal/entitlements/seed.go (90.8%)</option>
 				
 				</select>
 			</div>
@@ -1231,6 +1231,9 @@ func (e *APIError) Error() string <span class="cov2" title="2">{
         <span class="cov2" title="2">return fmt.Sprintf("%s returned %d %s: %s", e.service(), e.StatusCode, e.Code, e.Message)</span>
 }
 
+// HTTPStatus is the response status, for exit-code classification.
+func (e *APIError) HTTPStatus() int <span class="cov0" title="0">{ return e.StatusCode }</span>
+
 func (e *APIError) service() string <span class="cov2" title="2">{
         if e.Service == "" </span><span class="cov0" title="0">{
                 return "catalog-api"
@@ -1544,7 +1547,7 @@ func defaultResolveAPIRequest(service string) (baseURL string, tokens func(conte
 // spirit of `gh api`: it reuses the same session token attachment and
 // --curl preview transport every other command uses, against any configured
 // service rather than only catalog-api.
-func newAPICommand() *cobra.Command <span class="cov9" title="9">{
+func newAPICommand() *cobra.Command <span class="cov7" title="9">{
         c := &amp;cobra.Command{
                 Use:   "api [method] &lt;path&gt;",
                 Short: "Send an authenticated request against any platform service",
@@ -1563,17 +1566,17 @@ func newAPICommand() *cobra.Command <span class="cov9" title="9">{
         return c
 }</span>
 
-func runAPI(cmd *cobra.Command, args []string) error <span class="cov8" title="8">{
-        if strings.TrimSpace(flagAPIService) == "" </span><span class="cov0" title="0">{
+func runAPI(cmd *cobra.Command, args []string) error <span class="cov9" title="20">{
+        if strings.TrimSpace(flagAPIService) == "" </span><span class="cov1" title="1">{
                 return usageErr("--service is required")
         }</span>
 
-        <span class="cov8" title="8">method, path := parseAPIMethodPath(args)
+        <span class="cov9" title="19">method, path := parseAPIMethodPath(args)
         body, contentType, err := buildAPIBody(flagAPIFields, flagAPIRawField)
         if err != nil </span><span class="cov0" title="0">{
                 return usageErr("%v", err)
         }</span>
-        <span class="cov8" title="8">if method == "" </span><span class="cov3" title="2">{
+        <span class="cov9" title="19">if method == "" </span><span class="cov3" title="2">{
                 if body != nil </span><span class="cov3" title="2">{
                         method = http.MethodPost
                 }</span> else<span class="cov0" title="0"> {
@@ -1581,67 +1584,67 @@ func runAPI(cmd *cobra.Command, args []string) error <span class="cov8" title="8
                 }</span>
         }
 
-        <span class="cov8" title="8">headers, err := parseAPIHeaders(flagAPIHeaders)
+        <span class="cov9" title="19">headers, err := parseAPIHeaders(flagAPIHeaders)
         if err != nil </span><span class="cov0" title="0">{
                 return usageErr("%v", err)
         }</span>
 
-        <span class="cov8" title="8">baseURL, tokens, err := resolveAPIRequest(flagAPIService)
+        <span class="cov9" title="19">baseURL, tokens, err := resolveAPIRequest(flagAPIService)
         if err != nil </span><span class="cov0" title="0">{
                 return err
         }</span>
 
-        <span class="cov8" title="8">req, err := http.NewRequest(strings.ToUpper(method), joinBaseAndPath(baseURL, path), body)
+        <span class="cov9" title="19">req, err := http.NewRequest(strings.ToUpper(method), joinBaseAndPath(baseURL, path), body)
         if err != nil </span><span class="cov0" title="0">{
                 return usageErr("building request: %v", err)
         }</span>
-        <span class="cov8" title="8">if contentType != "" </span><span class="cov3" title="2">{
+        <span class="cov9" title="19">if contentType != "" </span><span class="cov4" title="3">{
                 req.Header.Set("Content-Type", contentType)
         }</span>
-        <span class="cov8" title="8">for k, v := range headers </span><span class="cov1" title="1">{
+        <span class="cov9" title="19">for k, v := range headers </span><span class="cov1" title="1">{
                 req.Header.Set(k, v)
         }</span>
 
-        <span class="cov8" title="8">token, err := tokens(cmd.Context())
-        if err != nil </span><span class="cov3" title="2">{
+        <span class="cov9" title="19">token, err := tokens(cmd.Context())
+        if err != nil </span><span class="cov4" title="3">{
                 // A --curl preview still renders without a session (matching an
                 // anonymous read against a public endpoint); every other run needs
                 // a real token.
-                if !flagCurl || !errors.Is(err, auth.ErrNotLoggedIn) </span><span class="cov1" title="1">{
+                if !flagCurl || !errors.Is(err, auth.ErrNotLoggedIn) </span><span class="cov3" title="2">{
                         return authExit(err)
                 }</span>
                 <span class="cov1" title="1">token = ""</span>
         }
-        <span class="cov8" title="7">if token != "" </span><span class="cov7" title="6">{
+        <span class="cov9" title="17">if token != "" </span><span class="cov9" title="16">{
                 req.Header.Set("Authorization", "Bearer "+token)
         }</span>
 
-        <span class="cov8" title="7">client := &amp;http.Client{Timeout: 30 * time.Second}
+        <span class="cov9" title="17">client := &amp;http.Client{Timeout: 30 * time.Second}
         withCurlCapture(&amp;client)
         resp, err := client.Do(req)
-        if err != nil </span><span class="cov3" title="2">{
+        if err != nil </span><span class="cov4" title="3">{
                 if isCurlExit(err) </span><span class="cov3" title="2">{
                         return nil
                 }</span>
-                <span class="cov0" title="0">return err</span>
+                <span class="cov1" title="1">return err</span>
         }
-        <span class="cov7" title="5">defer func() </span><span class="cov7" title="5">{ _, _ = io.Copy(io.Discard, resp.Body); _ = resp.Body.Close() }</span>()
+        <span class="cov8" title="14">defer func() </span><span class="cov8" title="14">{ _, _ = io.Copy(io.Discard, resp.Body); _ = resp.Body.Close() }</span>()
 
-        <span class="cov7" title="5">raw, err := io.ReadAll(io.LimitReader(resp.Body, 10&lt;&lt;20))
+        <span class="cov8" title="14">raw, err := io.ReadAll(io.LimitReader(resp.Body, 10&lt;&lt;20))
         if err != nil </span><span class="cov0" title="0">{
                 return fmt.Errorf("reading response body: %w", err)
         }</span>
-        <span class="cov7" title="5">cmd.Println(string(raw))
-        if resp.StatusCode &lt; 200 || resp.StatusCode &gt;= 300 </span><span class="cov1" title="1">{
-                return &amp;ExitError{Code: 1, Err: fmt.Errorf("%s returned %d", flagAPIService, resp.StatusCode)}
+        <span class="cov8" title="14">cmd.Println(string(raw))
+        if resp.StatusCode &lt; 200 || resp.StatusCode &gt;= 300 </span><span class="cov7" title="10">{
+                return &amp;ExitError{Code: exitForStatus(resp.StatusCode), Err: fmt.Errorf("%s returned %d", flagAPIService, resp.StatusCode)}
         }</span>
-        <span class="cov6" title="4">return nil</span>
+        <span class="cov5" title="4">return nil</span>
 }
 
 // parseAPIMethodPath splits positional args into method (possibly empty, to
 // be defaulted by body presence) and path.
-func parseAPIMethodPath(args []string) (method, path string) <span class="cov8" title="8">{
-        if len(args) == 2 </span><span class="cov7" title="6">{
+func parseAPIMethodPath(args []string) (method, path string) <span class="cov9" title="19">{
+        if len(args) == 2 </span><span class="cov9" title="17">{
                 return args[0], args[1]
         }</span>
         <span class="cov3" title="2">return "", args[0]</span>
@@ -1649,70 +1652,70 @@ func parseAPIMethodPath(args []string) (method, path string) <span class="cov8" 
 
 // joinBaseAndPath appends path (with or without a leading slash) to base,
 // trimming any duplicate slash at the seam.
-func joinBaseAndPath(base, path string) string <span class="cov10" title="11">{
+func joinBaseAndPath(base, path string) string <span class="cov10" title="22">{
         base = strings.TrimRight(base, "/")
         if !strings.HasPrefix(path, "/") </span><span class="cov0" title="0">{
                 path = "/" + path
         }</span>
-        <span class="cov10" title="11">return base + path</span>
+        <span class="cov10" title="22">return base + path</span>
 }
 
 // buildAPIBody constructs a JSON request body from --field (type-sniffed:
 // true/false/numeric encode as their JSON type, everything else as a
 // string) and --raw-field (always a string) flags. Returns a nil body when
 // neither is set.
-func buildAPIBody(fields, rawFields []string) (io.Reader, string, error) <span class="cov8" title="8">{
-        if len(fields) == 0 &amp;&amp; len(rawFields) == 0 </span><span class="cov7" title="6">{
+func buildAPIBody(fields, rawFields []string) (io.Reader, string, error) <span class="cov9" title="19">{
+        if len(fields) == 0 &amp;&amp; len(rawFields) == 0 </span><span class="cov9" title="16">{
                 return nil, "", nil
         }</span>
-        <span class="cov3" title="2">payload := map[string]any{}
-        for _, kv := range fields </span><span class="cov5" title="3">{
+        <span class="cov4" title="3">payload := map[string]any{}
+        for _, kv := range fields </span><span class="cov5" title="4">{
                 k, v, err := splitKeyValue(kv, "--field")
                 if err != nil </span><span class="cov0" title="0">{
                         return nil, "", err
                 }</span>
-                <span class="cov5" title="3">payload[k] = sniffJSONValue(v)</span>
+                <span class="cov5" title="4">payload[k] = sniffJSONValue(v)</span>
         }
-        <span class="cov3" title="2">for _, kv := range rawFields </span><span class="cov1" title="1">{
+        <span class="cov4" title="3">for _, kv := range rawFields </span><span class="cov1" title="1">{
                 k, v, err := splitKeyValue(kv, "--raw-field")
                 if err != nil </span><span class="cov0" title="0">{
                         return nil, "", err
                 }</span>
                 <span class="cov1" title="1">payload[k] = v</span>
         }
-        <span class="cov3" title="2">encoded, err := json.Marshal(payload)
+        <span class="cov4" title="3">encoded, err := json.Marshal(payload)
         if err != nil </span><span class="cov0" title="0">{
                 return nil, "", fmt.Errorf("encoding request body: %w", err)
         }</span>
-        <span class="cov3" title="2">return bytes.NewReader(encoded), "application/json", nil</span>
+        <span class="cov4" title="3">return bytes.NewReader(encoded), "application/json", nil</span>
 }
 
-func splitKeyValue(kv, flagName string) (key, value string, err error) <span class="cov6" title="4">{
+func splitKeyValue(kv, flagName string) (key, value string, err error) <span class="cov5" title="5">{
         i := strings.IndexByte(kv, '=')
         if i &lt; 0 </span><span class="cov0" title="0">{
                 return "", "", fmt.Errorf("%s value %q must be key=value", flagName, kv)
         }</span>
-        <span class="cov6" title="4">return kv[:i], kv[i+1:], nil</span>
+        <span class="cov5" title="5">return kv[:i], kv[i+1:], nil</span>
 }
 
 // sniffJSONValue type-sniffs a --field value the way `gh api -f` does:
 // true/false become booleans, a valid number becomes a JSON number,
 // everything else stays a string.
-func sniffJSONValue(v string) any <span class="cov5" title="3">{
+func sniffJSONValue(v string) any <span class="cov5" title="4">{
         switch v </span>{
         case "true":<span class="cov1" title="1">
                 return true</span>
         case "false":<span class="cov0" title="0">
                 return false</span>
         }
-        <span class="cov3" title="2">if n, err := strconv.ParseFloat(v, 64); err == nil </span><span class="cov1" title="1">{
+        <span class="cov4" title="3">if n, err := strconv.ParseFloat(v, 64); err == nil </span><span class="cov1" title="1">{
                 return n
         }</span>
-        <span class="cov1" title="1">return v</span>
+        <span class="cov3" title="2">return v</span>
 }
 
 // parseAPIHeaders parses repeatable "Key: Value" flag values.
-func parseAPIHeaders(raw []string) (map[string]string, error) <span class="cov8" title="8">{
+func parseAPIHeaders(raw []string) (map[string]string, error) <span class="cov9" title="19">{
         headers := map[string]string{}
         for _, h := range raw </span><span class="cov1" title="1">{
                 i := strings.IndexByte(h, ':')
@@ -1721,7 +1724,7 @@ func parseAPIHeaders(raw []string) (map[string]string, error) <span class="cov8"
                 }</span>
                 <span class="cov1" title="1">headers[strings.TrimSpace(h[:i])] = strings.TrimSpace(h[i+1:])</span>
         }
-        <span class="cov8" title="8">return headers, nil</span>
+        <span class="cov9" title="19">return headers, nil</span>
 }
 </pre>
 		
@@ -1847,13 +1850,13 @@ type ExitError struct {
         Err  error
 }
 
-func (e *ExitError) Error() string <span class="cov7" title="10">{ return e.Err.Error() }</span>
-func (e *ExitError) ExitCode() int <span class="cov10" title="22">{ return e.Code }</span>
-func (e *ExitError) Unwrap() error <span class="cov0" title="0">{ return e.Err }</span>
+func (e *ExitError) Error() string <span class="cov9" title="38">{ return e.Err.Error() }</span>
+func (e *ExitError) ExitCode() int <span class="cov10" title="59">{ return e.Code }</span>
+func (e *ExitError) Unwrap() error <span class="cov8" title="28">{ return e.Err }</span>
 
 // authExit tags errors the user fixes by logging in again.
-func authExit(err error) error <span class="cov4" title="3">{
-        if auth.IsAuthRequired(err) </span><span class="cov4" title="3">{
+func authExit(err error) error <span class="cov4" title="4">{
+        if auth.IsAuthRequired(err) </span><span class="cov4" title="4">{
                 return &amp;ExitError{Code: 3, Err: err}
         }</span>
         <span class="cov0" title="0">return err</span>
@@ -2361,7 +2364,7 @@ var flagCurl bool
 // IDs instead of names to see write requests directly.
 type curlTransport struct{}
 
-func (curlTransport) RoundTrip(req *http.Request) (*http.Response, error) <span class="cov6" title="5">{
+func (curlTransport) RoundTrip(req *http.Request) (*http.Response, error) <span class="cov5" title="5">{
         // The flow dies here, so silencing cobra's error/usage printing is safe:
         // only the rendered command should reach the terminal. Errors that happen
         // before any request (config, auth) still print normally.
@@ -2372,73 +2375,73 @@ func (curlTransport) RoundTrip(req *http.Request) (*http.Response, error) <span 
 }</span>
 
 // withCurlCapture swaps in the capture transport when --curl is set.
-func withCurlCapture(c **http.Client) <span class="cov9" title="12">{
-        if flagCurl &amp;&amp; c != nil &amp;&amp; *c != nil </span><span class="cov6" title="5">{
+func withCurlCapture(c **http.Client) <span class="cov9" title="22">{
+        if flagCurl &amp;&amp; c != nil &amp;&amp; *c != nil </span><span class="cov5" title="5">{
                 *c = &amp;http.Client{Transport: curlTransport{}}
         }</span>
 }
 
 // isCurlExit reports whether an error is the capture transport's abort,
 // surviving any wrapping on the way up.
-func isCurlExit(err error) bool <span class="cov9" title="12">{
-        if err == nil </span><span class="cov6" title="5">{
+func isCurlExit(err error) bool <span class="cov10" title="30">{
+        if err == nil </span><span class="cov5" title="5">{
                 return false
         }</span>
-        <span class="cov7" title="7">return errors.Is(err, errCurlEmitted) || strings.Contains(err.Error(), errCurlEmitted.Error())</span>
+        <span class="cov9" title="25">return errors.Is(err, errCurlEmitted) || strings.Contains(err.Error(), errCurlEmitted.Error())</span>
 }
 
 // renderCurl builds a runnable-except-for-the-token cURL invocation: headers
 // print as set, Authorization values are masked, JSON bodies are pretty-
 // printed, and everything is single-quote shell-escaped.
-func renderCurl(req *http.Request) string <span class="cov7" title="7">{
+func renderCurl(req *http.Request) string <span class="cov6" title="7">{
         head := "curl"
-        if req.Method != http.MethodGet </span><span class="cov3" title="2">{
+        if req.Method != http.MethodGet </span><span class="cov2" title="2">{
                 head += " -X " + req.Method
         }</span>
-        <span class="cov7" title="7">parts := []string{head + " " + shellQuote(req.URL.String())}
+        <span class="cov6" title="7">parts := []string{head + " " + shellQuote(req.URL.String())}
 
         keys := make([]string, 0, len(req.Header))
-        for k := range req.Header </span><span class="cov7" title="7">{
+        for k := range req.Header </span><span class="cov6" title="7">{
                 keys = append(keys, k)
         }</span>
-        <span class="cov7" title="7">sort.Strings(keys)
-        for _, k := range keys </span><span class="cov7" title="7">{
+        <span class="cov6" title="7">sort.Strings(keys)
+        for _, k := range keys </span><span class="cov6" title="7">{
                 v := req.Header.Get(k)
-                if strings.EqualFold(k, "Authorization") </span><span class="cov3" title="2">{
+                if strings.EqualFold(k, "Authorization") </span><span class="cov2" title="2">{
                         v = maskAuth(v)
                 }</span>
-                <span class="cov7" title="7">parts = append(parts, "-H "+shellQuote(k+": "+v))</span>
+                <span class="cov6" title="7">parts = append(parts, "-H "+shellQuote(k+": "+v))</span>
         }
-        <span class="cov7" title="7">if body := peekBody(req); len(body) &gt; 0 </span><span class="cov1" title="1">{
+        <span class="cov6" title="7">if body := peekBody(req); len(body) &gt; 0 </span><span class="cov1" title="1">{
                 parts = append(parts, "--data "+shellQuote(string(body)))
         }</span>
-        <span class="cov7" title="7">return strings.Join(parts, " \\\n  ")</span>
+        <span class="cov6" title="7">return strings.Join(parts, " \\\n  ")</span>
 }
 
 // peekBody reads the request body for rendering without consuming it for real:
 // GetBody replays it when available; otherwise the raw bytes are restored onto
 // the request. Parseable JSON is indented for readability.
-func peekBody(req *http.Request) []byte <span class="cov7" title="8">{
-        if req.Body == nil || req.Body == http.NoBody </span><span class="cov6" title="6">{
+func peekBody(req *http.Request) []byte <span class="cov6" title="8">{
+        if req.Body == nil || req.Body == http.NoBody </span><span class="cov5" title="6">{
                 return nil
         }</span>
-        <span class="cov3" title="2">var raw []byte
-        if req.GetBody != nil </span><span class="cov3" title="2">{
+        <span class="cov2" title="2">var raw []byte
+        if req.GetBody != nil </span><span class="cov2" title="2">{
                 br, err := req.GetBody()
                 if err != nil </span><span class="cov0" title="0">{
                         return nil
                 }</span>
-                <span class="cov3" title="2">defer func() </span><span class="cov3" title="2">{ _ = br.Close() }</span>()
-                <span class="cov3" title="2">raw, _ = io.ReadAll(br)</span>
+                <span class="cov2" title="2">defer func() </span><span class="cov2" title="2">{ _ = br.Close() }</span>()
+                <span class="cov2" title="2">raw, _ = io.ReadAll(br)</span>
         } else<span class="cov0" title="0"> {
                 raw, _ = io.ReadAll(req.Body)
                 req.Body = io.NopCloser(bytes.NewReader(raw))
         }</span>
-        <span class="cov3" title="2">if len(raw) == 0 </span><span class="cov0" title="0">{
+        <span class="cov2" title="2">if len(raw) == 0 </span><span class="cov0" title="0">{
                 return nil
         }</span>
-        <span class="cov3" title="2">var buf bytes.Buffer
-        if json.Indent(&amp;buf, raw, "", "  ") == nil &amp;&amp; json.Valid(buf.Bytes()) </span><span class="cov3" title="2">{
+        <span class="cov2" title="2">var buf bytes.Buffer
+        if json.Indent(&amp;buf, raw, "", "  ") == nil &amp;&amp; json.Valid(buf.Bytes()) </span><span class="cov2" title="2">{
                 return buf.Bytes()
         }</span>
         <span class="cov0" title="0">return raw</span>
@@ -2446,9 +2449,9 @@ func peekBody(req *http.Request) []byte <span class="cov7" title="8">{
 
 // maskAuth keeps tokens out of terminals and scrollback: only the scheme
 // survives ("Bearer &lt;redacted&gt;").
-func maskAuth(v string) string <span class="cov3" title="2">{
+func maskAuth(v string) string <span class="cov2" title="2">{
         parts := strings.SplitN(v, " ", 2)
-        if len(parts) == 2 </span><span class="cov3" title="2">{
+        if len(parts) == 2 </span><span class="cov2" title="2">{
                 return parts[0] + " &lt;redacted&gt;"
         }</span>
         <span class="cov0" title="0">return "&lt;redacted&gt;"</span>
@@ -2456,7 +2459,7 @@ func maskAuth(v string) string <span class="cov3" title="2">{
 
 // shellQuote wraps s in single quotes, escaping embedded quotes so the
 // printed command round-trips through POSIX shells.
-func shellQuote(s string) string <span class="cov10" title="15">{
+func shellQuote(s string) string <span class="cov8" title="15">{
         return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }</span>
 </pre>
@@ -2978,64 +2981,64 @@ func newEntitlementsCommand() *cobra.Command <span class="cov8" title="19">{
         return ent
 }</span>
 
-func runEntitlementsSeed(cmd *cobra.Command, _ []string) error <span class="cov8" title="17">{
+func runEntitlementsSeed(cmd *cobra.Command, _ []string) error <span class="cov8" title="18">{
         if flagCurl </span><span class="cov1" title="1">{
                 return usageErr("--curl is not supported for seed: it makes requests that depend on earlier responses")
         }</span>
-        <span class="cov8" title="16">if flagEntitlementsSeedReplace &amp;&amp; flagEntitlementsSeedPrices == "" </span><span class="cov1" title="1">{
+        <span class="cov8" title="17">if flagEntitlementsSeedReplace &amp;&amp; flagEntitlementsSeedPrices == "" </span><span class="cov1" title="1">{
                 return usageErr("--replace-prices needs --prices")
         }</span>
-        <span class="cov8" title="15">doc, overlay, err := readSeedFiles(flagEntitlementsSeedFile, flagEntitlementsSeedPrices)
+        <span class="cov8" title="16">doc, overlay, err := readSeedFiles(flagEntitlementsSeedFile, flagEntitlementsSeedPrices)
         if err != nil </span><span class="cov4" title="4">{
                 return usageErr("%v", err)
         }</span>
 
-        <span class="cov7" title="11">baseURL, tokens, err := resolveAPIRequest("entitlements")
+        <span class="cov7" title="12">baseURL, tokens, err := resolveAPIRequest("entitlements")
         if err != nil </span><span class="cov0" title="0">{
                 return err
         }</span>
-        <span class="cov7" title="11">token, err := tokens(cmd.Context())
+        <span class="cov7" title="12">token, err := tokens(cmd.Context())
         if err != nil </span><span class="cov1" title="1">{
                 return authExit(err)
         }</span>
 
-        <span class="cov7" title="10">client := &amp;entitlements.Client{
+        <span class="cov7" title="11">client := &amp;entitlements.Client{
                 BaseURL: baseURL, Token: token, HTTP: &amp;http.Client{Timeout: 30 * time.Second},
                 Delay: flagEntitlementsSeedDelay, Sleep: entitlementsSleep, ReplacePrices: flagEntitlementsSeedReplace,
                 Logf: func(format string, args ...any) </span><span class="cov1" title="1">{ cmd.PrintErrf(format+"\n", args...) }</span>,
         }
-        <span class="cov7" title="10">report, err := client.Load(cmd.Context(), doc, overlay, flagEntitlementsSeedDryRun)
+        <span class="cov7" title="11">report, err := client.Load(cmd.Context(), doc, overlay, flagEntitlementsSeedDryRun)
         for _, l := range report.Created </span><span class="cov10" title="30">{
                 cmd.Println("created ", l)
         }</span>
-        <span class="cov7" title="10">for _, l := range report.Existing </span><span class="cov6" title="7">{
+        <span class="cov7" title="11">for _, l := range report.Existing </span><span class="cov6" title="7">{
                 cmd.Println("exists  ", l)
         }</span>
-        <span class="cov7" title="10">for _, l := range report.Skipped </span><span class="cov1" title="1">{
+        <span class="cov7" title="11">for _, l := range report.Skipped </span><span class="cov1" title="1">{
                 cmd.Println("skipped ", l)
         }</span>
-        <span class="cov7" title="10">verb := "replaced"
+        <span class="cov7" title="11">verb := "replaced"
         if flagEntitlementsSeedDryRun </span><span class="cov2" title="2">{
                 verb = "would replace"
         }</span>
-        <span class="cov7" title="10">for _, l := range report.Replaced </span><span class="cov2" title="2">{
+        <span class="cov7" title="11">for _, l := range report.Replaced </span><span class="cov2" title="2">{
                 cmd.Println(verb, l)
         }</span>
-        <span class="cov7" title="10">return err</span>
+        <span class="cov7" title="11">return err</span>
 }
 
 // readSeedFiles parses the seed file and, when given, the price overlay. Problems here are the
 // caller's input, reported as usage errors.
-func readSeedFiles(seedPath, pricesPath string) (*entitlements.Doc, *entitlements.Prices, error) <span class="cov8" title="15">{
+func readSeedFiles(seedPath, pricesPath string) (*entitlements.Doc, *entitlements.Prices, error) <span class="cov8" title="16">{
         raw, err := os.ReadFile(seedPath)
         if err != nil </span><span class="cov1" title="1">{
                 return nil, nil, err
         }</span>
-        <span class="cov7" title="14">doc, err := entitlements.Parse(raw)
+        <span class="cov8" title="15">doc, err := entitlements.Parse(raw)
         if err != nil </span><span class="cov1" title="1">{
                 return nil, nil, fmt.Errorf("%s: %w", seedPath, err)
         }</span>
-        <span class="cov7" title="13">if pricesPath == "" </span><span class="cov5" title="5">{
+        <span class="cov7" title="14">if pricesPath == "" </span><span class="cov5" title="6">{
                 return doc, nil, nil
         }</span>
         <span class="cov6" title="8">raw, err = os.ReadFile(pricesPath)
@@ -4536,6 +4539,9 @@ func confirmDelete(cmd *cobra.Command, entity, id string) error <span class="cov
 import (
         "errors"
         "fmt"
+        "io"
+        "net/http"
+        "os"
         "strings"
         "sync"
 
@@ -4550,7 +4556,10 @@ var rootCmd = &amp;cobra.Command{
                 "  sweetrpg api ...          generic authenticated request against any service\n" +
                 "  sweetrpg entitlements ... entitlements catalog (seed)\n\n" +
                 "Shell completion: sweetrpg completion [bash|zsh|fish|powershell]\n" +
-                "Exit codes: 0 success, 1 error, 2 usage, 3 authentication.",
+                "Exit codes: 0 success, 1 error, 2 usage, 3 authentication, 4 API client error (4xx),\n" +
+                "5 API server error (5xx).",
+        // Usage text is for usage errors only; execute prints it for exit code 2.
+        SilenceUsage: true,
 }
 
 var buildOnce sync.Once
@@ -4575,7 +4584,7 @@ var catalogCmd = &amp;cobra.Command{
 
 // buildTree attaches generated subcommands. It runs lazily (not in init) so
 // the entity registry is fully populated regardless of file init order.
-func buildTree() <span class="cov10" title="34">{
+func buildTree() <span class="cov10" title="51">{
         buildOnce.Do(func() </span><span class="cov1" title="1">{
                 rootCmd.PersistentFlags().StringVar(&amp;flagAPIURL, "api-url", "", "catalog API base URL (overrides env and config file)")
                 rootCmd.PersistentFlags().StringVar(&amp;flagAssetsWebURL, "assets-web-url", "", "assets-web base URL for asset uploads")
@@ -4599,43 +4608,105 @@ func buildTree() <span class="cov10" title="34">{
         }</span>)
 }
 
-// Execute runs the root command. Errors returned by subcommands are printed by
-// cobra; the exit code is decided here so subcommands can signal specific codes.
-func Execute() error <span class="cov5" title="5">{
+// Execute runs the root command with the process's streams. Results go to stdout; the error line
+// goes to stderr, and the usage text follows it only when the error is a usage error.
+func Execute() error <span class="cov4" title="5">{ return execute(nil, os.Stdout, os.Stderr) }</span>
+
+// execute runs the command tree with the given arguments (nil means os.Args) and streams. The exit
+// code is decided here so subcommands can signal specific codes: 2 usage, 3 authentication, 4 API
+// client error, 5 API server error, 1 anything else.
+func execute(args []string, stdout, stderr io.Writer) error <span class="cov8" title="22">{
         buildTree()
-        rootCmd.SetFlagErrorFunc(func(_ *cobra.Command, err error) error </span><span class="cov0" title="0">{
+        rootCmd.SetOut(stdout)
+        rootCmd.SetErr(stderr)
+        if args != nil </span><span class="cov7" title="17">{
+                rootCmd.SetArgs(args)
+        }</span>
+        <span class="cov8" title="22">rootCmd.SetFlagErrorFunc(func(_ *cobra.Command, err error) error </span><span class="cov1" title="1">{
                 return &amp;ExitError{Code: 2, Err: err}
         }</span>)
-        <span class="cov5" title="5">err := classifyUsage(rootCmd.Execute())
+        <span class="cov8" title="22">rootCmd.SilenceErrors = false // a --curl run silences errors; do not carry that into this one
+        failed, err := rootCmd.ExecuteC()
+        err = classifyExit(classifyUsage(err))
         // A --curl run that rendered its request(s) is a success, even though the
         // capture transport aborts the flow with a sentinel.
         if isCurlExit(err) </span><span class="cov1" title="1">{
                 return nil
         }</span>
-        <span class="cov4" title="4">return err</span>
+        <span class="cov7" title="21">var ec ExitCoder
+        if errors.As(err, &amp;ec) &amp;&amp; ec.ExitCode() == exitUsage &amp;&amp; failed != nil </span><span class="cov4" title="5">{
+                _, _ = fmt.Fprint(stderr, "\n", failed.UsageString())
+        }</span>
+        <span class="cov7" title="21">return err</span>
+}
+
+// Exit codes beyond the general 1.
+const (
+        exitUsage  = 2
+        exitAuth   = 3
+        exitClient = 4
+        exitServer = 5
+)
+
+// statusCoder is an error that carries the HTTP status an API answered with.
+type statusCoder interface {
+        error
+        HTTPStatus() int
+}
+
+// classifyExit gives an error from an API call its documented exit code. An error that already
+// has one (usage, authentication) keeps it.
+func classifyExit(err error) error <span class="cov8" title="29">{
+        if err == nil </span><span class="cov4" title="5">{
+                return nil
+        }</span>
+        <span class="cov8" title="24">var ec ExitCoder
+        if errors.As(err, &amp;ec) </span><span class="cov7" title="16">{
+                return err
+        }</span>
+        <span class="cov5" title="8">var sc statusCoder
+        if errors.As(err, &amp;sc) </span><span class="cov4" title="5">{
+                return &amp;ExitError{Code: exitForStatus(sc.HTTPStatus()), Err: err}
+        }</span>
+        <span class="cov3" title="3">return err</span>
+}
+
+// exitForStatus maps an API response status to an exit code: 401 is an authentication failure,
+// other 4xx are client errors, 5xx are server errors.
+func exitForStatus(status int) int <span class="cov7" title="15">{
+        switch </span>{
+        case status == http.StatusUnauthorized:<span class="cov2" title="2">
+                return exitAuth</span>
+        case status &gt;= 500:<span class="cov3" title="3">
+                return exitServer</span>
+        case status &gt;= 400:<span class="cov6" title="10">
+                return exitClient</span>
+        }
+        <span class="cov0" title="0">return 1</span>
 }
 
 // classifyUsage maps cobra's untyped command/argument errors to the documented
 // usage exit code. Cobra has no typed errors for these; the message shapes it
 // produces for them are stable.
-func classifyUsage(err error) error <span class="cov6" title="10">{
-        if err == nil </span><span class="cov5" title="5">{
+func classifyUsage(err error) error <span class="cov8" title="27">{
+        if err == nil </span><span class="cov4" title="5">{
                 return nil
         }</span>
-        <span class="cov5" title="5">var ec ExitCoder
-        if errors.As(err, &amp;ec) </span><span class="cov0" title="0">{
+        <span class="cov8" title="22">var ec ExitCoder
+        if errors.As(err, &amp;ec) </span><span class="cov6" title="12">{
                 return err
         }</span>
-        <span class="cov5" title="5">msg := err.Error()
+        <span class="cov6" title="10">msg := err.Error()
         if strings.HasPrefix(msg, "unknown command ") || strings.Contains(msg, " arg(s)") ||
-                strings.HasPrefix(msg, "unknown flag:") || strings.HasPrefix(msg, "unknown shorthand flag:") </span><span class="cov3" title="3">{
+                strings.HasPrefix(msg, "required flag(s) ") || strings.HasPrefix(msg, "invalid argument ") ||
+                strings.HasPrefix(msg, "unknown flag:") || strings.HasPrefix(msg, "unknown shorthand flag:") </span><span class="cov5" title="6">{
                 return &amp;ExitError{Code: 2, Err: err}
         }</span>
-        <span class="cov2" title="2">return err</span>
+        <span class="cov4" title="4">return err</span>
 }
 
 // usageErr tags a validation failure as a usage error (exit code 2).
-func usageErr(format string, args ...any) error <span class="cov7" title="15">{
+func usageErr(format string, args ...any) error <span class="cov7" title="16">{
         return &amp;ExitError{Code: 2, Err: fmt.Errorf(format, args...)}
 }</span>
 </pre>
@@ -5881,9 +5952,21 @@ func (c *Client) applyPrice(ctx context.Context, r *Report, lp liveProduct, pric
         return nil</span>
 }
 
+// StatusError is an unexpected response from the service. It keeps the HTTP status so the CLI can
+// choose an exit code from it.
+type StatusError struct {
+        Msg    string
+        Status int
+}
+
+func (e *StatusError) Error() string <span class="cov4" title="6">{ return e.Msg }</span>
+
+// HTTPStatus is the response status.
+func (e *StatusError) HTTPStatus() int <span class="cov0" title="0">{ return e.Status }</span>
+
 // apiError describes an unexpected response with its body, which carries the service's message.
 func apiError(what string, status int, body []byte) error <span class="cov2" title="2">{
-        return fmt.Errorf("%s: status %d: %s", what, status, strings.TrimSpace(string(body)))
+        return &amp;StatusError{Status: status, Msg: fmt.Sprintf("%s: status %d: %s", what, status, strings.TrimSpace(string(body)))}
 }</span>
 
 // do sends one request, pausing first (pacing) and retrying a 429 with backoff. It returns the
@@ -5909,7 +5992,7 @@ func (c *Client) do(ctx context.Context, method, path string, body any) (int, []
                         return status, out, err
                 }</span>
                 <span class="cov4" title="8">if attempt &gt;= c.maxRetries() </span><span class="cov1" title="1">{
-                        return status, out, fmt.Errorf("rate limited after %d retries: %s", attempt, strings.TrimSpace(string(out)))
+                        return status, out, &amp;StatusError{Status: status, Msg: fmt.Sprintf("rate limited after %d retries: %s", attempt, strings.TrimSpace(string(out)))}
                 }</span>
                 <span class="cov4" title="7">wait := retryWait(header, attempt, time.Now())
                 c.logf("rate limited by the service; waiting %s before retry %d of %d", wait.Round(time.Second), attempt+1, c.maxRetries())
