@@ -1,4 +1,11 @@
 
+## 0.7.0 - 2026-11-05
+
+### Added
+- Add auth token to print the access token
+
+
+
 ## 0.6.1 - 2026-10-30
 
 ### Fixed
