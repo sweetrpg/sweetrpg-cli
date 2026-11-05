@@ -87,6 +87,11 @@ shared across every command namespace (`catalog`, `api`, `game-room`, ...) - one
 of them. Tokens are stored in your OS keychain under service name `sweetrpg-cli`; access tokens
 refresh automatically. `auth logout` removes them. Auth failures exit with code 3.
 
+`sweetrpg auth token` prints the current access token to stdout (refreshing it if needed) for
+scripts that call a platform API as you, for example `ADMIN_BEARER_TOKEN="$(sweetrpg auth token)"`.
+It prints nothing and exits 3 when you are not logged in. Treat the output as a password; `--curl`
+previews still redact it.
+
 Reads don't require a login: `catalog view` (and name resolution it performs) hits public
 endpoints and works with no stored session. Writes (`add`, `edit`, `delete`, `link`, `unlink`)
 require one.
