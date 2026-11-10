@@ -1,6 +1,6 @@
 module github.com/sweetrpg/sweetrpg-cli
 
-go 1.26.5
+go 1.26.10
 
 require (
 	github.com/google/jsonapi v1.0.0
