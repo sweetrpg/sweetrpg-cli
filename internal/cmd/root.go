@@ -50,7 +50,7 @@ var catalogCmd = &cobra.Command{
 // the entity registry is fully populated regardless of file init order.
 func buildTree() {
 	buildOnce.Do(func() {
-		rootCmd.PersistentFlags().StringVar(&flagAPIURL, "api-url", "", "catalog API base URL (overrides env and config file)")
+		rootCmd.PersistentFlags().StringVar(&flagAPIURL, "api-url", "", "base URL of the targeted service: catalog commands, or the --service of `api` (overrides env and config file)")
 		rootCmd.PersistentFlags().StringVar(&flagAssetsWebURL, "assets-web-url", "", "assets-web base URL for asset uploads")
 		rootCmd.PersistentFlags().BoolVar(&flagYes, "yes", false, "assume non-interactive mode; fail on ambiguity with the candidate list")
 		rootCmd.PersistentFlags().BoolVar(&flagCurl, "curl", false, "print the equivalent cURL command(s) instead of calling the API")

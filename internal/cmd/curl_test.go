@@ -184,3 +184,73 @@ func TestIsCurlExitSurvivesWrapping(t *testing.T) {
 		t.Error("wrapped sentinel must still match")
 	}
 }
+
+// resolveFor runs the real resolver for service with --api-url set to flagURL. It only builds the
+// token source, so no keychain or network is touched.
+func resolveFor(t *testing.T, flagURL, service string) string {
+	t.Helper()
+	// The resolver loads auth config even though it never uses it here; CI has no build-time defaults.
+	t.Setenv("SWEETRPG_AUTH_DOMAIN", "login.example.test")
+	t.Setenv("SWEETRPG_AUTH_CLIENT_ID", "test-client")
+	t.Setenv("SWEETRPG_AUTH_AUDIENCE", "https://api.example.test")
+	t.Setenv("HOME", t.TempDir())
+	oldURL := flagAPIURL
+	t.Cleanup(func() { flagAPIURL = oldURL })
+	flagAPIURL = flagURL
+	base, _, err := defaultResolveAPIRequest(service)
+	if err != nil {
+		t.Fatalf("resolve %s: %v", service, err)
+	}
+	return base
+}
+
+func TestAPIURLOverridesTheTargetedService(t *testing.T) {
+	for _, svc := range []string{"auth", "game-room", "users", "catalog"} {
+		t.Run(svc, func(t *testing.T) {
+			if got := resolveFor(t, "http://127.0.0.1:18000", svc); got != "http://127.0.0.1:18000" {
+				t.Errorf("--api-url ignored for %s: base = %q", svc, got)
+			}
+		})
+	}
+}
+
+func TestAPIWithoutURLFlagUsesTheServiceDefault(t *testing.T) {
+	t.Setenv("SWEETRPG_AUTH_API_URL", "http://127.0.0.1:18001")
+	if got := resolveFor(t, "", "auth"); got != "http://127.0.0.1:18001" {
+		t.Errorf("env URL not used without --api-url: base = %q", got)
+	}
+}
+
+func TestAPICommandSendsToTheOverrideURL(t *testing.T) {
+	f := newAPIFixture(t, http.StatusOK, `{}`)
+	oldURL, oldResolve := flagAPIURL, resolveAPIRequest
+	t.Cleanup(func() { flagAPIURL, resolveAPIRequest = oldURL, oldResolve })
+	flagAPIURL = f.srv.URL
+	// Same as the default resolver, except the token source, which would reach for the keychain.
+	resolveAPIRequest = func(service string) (string, func(context.Context) (string, error), error) {
+		base, _, err := defaultResolveAPIRequest(service)
+		return base, func(context.Context) (string, error) { return "tok", nil }, err
+	}
+	t.Setenv("SWEETRPG_AUTH_DOMAIN", "login.example.test")
+	t.Setenv("SWEETRPG_AUTH_CLIENT_ID", "test-client")
+	t.Setenv("SWEETRPG_AUTH_AUDIENCE", "https://api.example.test")
+	t.Setenv("HOME", t.TempDir())
+	c := newTestAPICommand(t)
+	if err := c.Flags().Set("service", "auth"); err != nil {
+		t.Fatal(err)
+	}
+	runEntityCommand(t, c, []string{"GET", "/ping"})
+	if f.requests != 1 || f.gotPath != "/ping" {
+		t.Fatalf("requests=%d path=%q, want one call to the override server", f.requests, f.gotPath)
+	}
+}
+
+func TestAPIRejectsABadServiceName(t *testing.T) {
+	c := newTestAPICommand(t)
+	if err := c.Flags().Set("service", "Bad Name"); err != nil {
+		t.Fatal(err)
+	}
+	if err := runAPI(c, []string{"/x"}); err == nil || !strings.Contains(err.Error(), "not a service name") {
+		t.Fatalf("err = %v, want a service-name usage error", err)
+	}
+}

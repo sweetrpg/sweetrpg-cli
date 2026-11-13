@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -17,6 +18,10 @@ import (
 	"github.com/sweetrpg/sweetrpg-cli/internal/auth"
 	"github.com/sweetrpg/sweetrpg-cli/internal/config"
 )
+
+// serviceNameRE is the kebab-case form every service name takes; it keeps a
+// malformed --service from being turned into an env var name or URL path.
+var serviceNameRE = regexp.MustCompile(`^[a-z][a-z0-9]*(-[a-z0-9]+)*$`)
 
 var (
 	flagAPIService  string
@@ -31,8 +36,8 @@ var (
 )
 
 // defaultResolveAPIRequest loads config/auth the same way every other
-// command does; --api-url only applies when the caller targeted "catalog"
-// with it, since that flag is the catalog command tree's own override.
+// command does. --api-url overrides the base URL of whichever service the
+// command targets (catalog, game-room, entitlements, or any --service value).
 func defaultResolveAPIRequest(service string) (baseURL string, tokens func(context.Context) (string, error), err error) {
 	cfg, err := config.Load(config.Sources{
 		FlagAssetsWebURL: flagAssetsWebURL,
@@ -42,11 +47,7 @@ func defaultResolveAPIRequest(service string) (baseURL string, tokens func(conte
 	if err != nil {
 		return "", nil, err
 	}
-	var apiURLOverride string
-	if service == "catalog" {
-		apiURLOverride = flagAPIURL
-	}
-	baseURL, err = cfg.ServiceURL(os.Getenv, apiURLOverride, service)
+	baseURL, err = cfg.ServiceURL(os.Getenv, flagAPIURL, service)
 	if err != nil {
 		return "", nil, err
 	}
@@ -68,8 +69,11 @@ func newAPICommand() *cobra.Command {
 		Short: "Send an authenticated request against any platform service",
 		Long: "Send an arbitrary authenticated HTTP request against a named platform service,\n" +
 			"in the spirit of `gh api`.\n\n" +
+			"The service's base URL comes from --api-url (applies to the service named by\n" +
+			"--service), else SWEETRPG_<SERVICE>_API_URL, else the config file.\n\n" +
 			"  sweetrpg api GET /volumes/123 --service catalog\n" +
-			"  sweetrpg api POST /publishers --service catalog --field name=\"Evil Hat\"\n\n" +
+			"  sweetrpg api POST /publishers --service catalog --field name=\"Evil Hat\"\n" +
+			"  sweetrpg api GET /authz/check --service auth --api-url http://localhost:18000\n\n" +
 			"The method defaults to GET with no body, POST when --field/--raw-field is set.",
 		Args: cobra.RangeArgs(1, 2),
 		RunE: runAPI,
@@ -84,6 +88,9 @@ func newAPICommand() *cobra.Command {
 func runAPI(cmd *cobra.Command, args []string) error {
 	if strings.TrimSpace(flagAPIService) == "" {
 		return usageErr("--service is required")
+	}
+	if !serviceNameRE.MatchString(flagAPIService) {
+		return usageErr("--service %q is not a service name (lowercase letters, digits and hyphens)", flagAPIService)
 	}
 
 	method, path := parseAPIMethodPath(args)

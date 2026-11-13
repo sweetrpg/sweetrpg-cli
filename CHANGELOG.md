@@ -1,4 +1,15 @@
 
+## 0.8.0 - 2026-11-13
+
+### Added
+- Add auth token command
+
+
+### Fixed
+- Apply --api-url to the service the command targets
+
+
+
 ## 0.7.0 - 2026-11-05
 
 ### Added
