@@ -185,36 +185,30 @@ func TestIsCurlExitSurvivesWrapping(t *testing.T) {
 	}
 }
 
-// runAPIPreview runs `sweetrpg <args>` through the real root command with --curl and returns what
-// it printed.
-func runAPIPreview(t *testing.T, args ...string) string {
+// resolveFor runs the real resolver for service with --api-url set to flagURL. It only builds the
+// token source, so no keychain or network is touched.
+func resolveFor(t *testing.T, flagURL, service string) string {
 	t.Helper()
-	oldDomain, oldClientID, oldAudience := auth.Domain, auth.ClientID, auth.Audience
-	auth.Domain, auth.ClientID, auth.Audience = "", "", ""
-	t.Cleanup(func() { auth.Domain, auth.ClientID, auth.Audience = oldDomain, oldClientID, oldAudience })
-	resetResolveState(t)
-	oldURL, oldService := flagAPIURL, flagAPIService
-	t.Cleanup(func() {
-		flagAPIURL, flagAPIService = oldURL, oldService
-		rootCmd.SetArgs(nil)
-		_ = rootCmd.PersistentFlags().Set("curl", "false")
-	})
-	flagAPIURL = "" // an earlier test may have left a value; each run starts from the flag's default
-	rootCmd.SetArgs(args)
-	var runErr error
-	out := runCaptured(t, func() { runErr = Execute() })
-	if runErr != nil {
-		t.Fatalf("run %v: %v", args, runErr)
+	// The resolver loads auth config even though it never uses it here; CI has no build-time defaults.
+	t.Setenv("SWEETRPG_AUTH_DOMAIN", "login.example.test")
+	t.Setenv("SWEETRPG_AUTH_CLIENT_ID", "test-client")
+	t.Setenv("SWEETRPG_AUTH_AUDIENCE", "https://api.example.test")
+	t.Setenv("HOME", t.TempDir())
+	oldURL := flagAPIURL
+	t.Cleanup(func() { flagAPIURL = oldURL })
+	flagAPIURL = flagURL
+	base, _, err := defaultResolveAPIRequest(service)
+	if err != nil {
+		t.Fatalf("resolve %s: %v", service, err)
 	}
-	return out
+	return base
 }
 
 func TestAPIURLOverridesTheTargetedService(t *testing.T) {
 	for _, svc := range []string{"auth", "game-room", "users", "catalog"} {
 		t.Run(svc, func(t *testing.T) {
-			out := runAPIPreview(t, "--api-url", "http://127.0.0.1:18000", "--yes", "--curl", "api", "GET", "/ping", "--service", svc)
-			if !strings.Contains(out, "'http://127.0.0.1:18000/ping'") {
-				t.Errorf("--api-url ignored for %s, output:\n%s", svc, out)
+			if got := resolveFor(t, "http://127.0.0.1:18000", svc); got != "http://127.0.0.1:18000" {
+				t.Errorf("--api-url ignored for %s: base = %q", svc, got)
 			}
 		})
 	}
@@ -222,9 +216,32 @@ func TestAPIURLOverridesTheTargetedService(t *testing.T) {
 
 func TestAPIWithoutURLFlagUsesTheServiceDefault(t *testing.T) {
 	t.Setenv("SWEETRPG_AUTH_API_URL", "http://127.0.0.1:18001")
-	out := runAPIPreview(t, "--yes", "--curl", "api", "GET", "/ping", "--service", "auth")
-	if !strings.Contains(out, "'http://127.0.0.1:18001/ping'") {
-		t.Errorf("env URL not used without --api-url, output:\n%s", out)
+	if got := resolveFor(t, "", "auth"); got != "http://127.0.0.1:18001" {
+		t.Errorf("env URL not used without --api-url: base = %q", got)
+	}
+}
+
+func TestAPICommandSendsToTheOverrideURL(t *testing.T) {
+	f := newAPIFixture(t, http.StatusOK, `{}`)
+	oldURL, oldResolve := flagAPIURL, resolveAPIRequest
+	t.Cleanup(func() { flagAPIURL, resolveAPIRequest = oldURL, oldResolve })
+	flagAPIURL = f.srv.URL
+	// Same as the default resolver, except the token source, which would reach for the keychain.
+	resolveAPIRequest = func(service string) (string, func(context.Context) (string, error), error) {
+		base, _, err := defaultResolveAPIRequest(service)
+		return base, func(context.Context) (string, error) { return "tok", nil }, err
+	}
+	t.Setenv("SWEETRPG_AUTH_DOMAIN", "login.example.test")
+	t.Setenv("SWEETRPG_AUTH_CLIENT_ID", "test-client")
+	t.Setenv("SWEETRPG_AUTH_AUDIENCE", "https://api.example.test")
+	t.Setenv("HOME", t.TempDir())
+	c := newTestAPICommand(t)
+	if err := c.Flags().Set("service", "auth"); err != nil {
+		t.Fatal(err)
+	}
+	runEntityCommand(t, c, []string{"GET", "/ping"})
+	if f.requests != 1 || f.gotPath != "/ping" {
+		t.Fatalf("requests=%d path=%q, want one call to the override server", f.requests, f.gotPath)
 	}
 }
 
