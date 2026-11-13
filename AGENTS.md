@@ -23,7 +23,7 @@ this is a leaf binary.
 
 ## Configuration
 
-Config precedence per service: CLI flag (catalog only today) > `SWEETRPG_<SERVICE>_API_URL` env
+Config precedence per service: CLI `--api-url` flag (the targeted service) > `SWEETRPG_<SERVICE>_API_URL` env
 var (e.g. `SWEETRPG_CATALOG_API_URL`) > `~/.config/sweetrpg/cli.yaml`'s `services.<service>`
 entry.
 

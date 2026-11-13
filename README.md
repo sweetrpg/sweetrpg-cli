@@ -22,7 +22,7 @@ go install github.com/sweetrpg/sweetrpg-cli/cmd/sweetrpg@latest
 
 Each service's base URL resolves in this order:
 
-1. `--api-url` flag (catalog only today) - a full URL
+1. `--api-url` flag - a full URL, for the service the command targets (catalog commands, or `--service` on `api`)
 2. `SWEETRPG_<SERVICE>_API_URL` environment variable (e.g. `SWEETRPG_CATALOG_API_URL`,
    `SWEETRPG_GAME_ROOM_API_URL`) - also a full URL
 3. `~/.config/sweetrpg/cli.yaml`'s `baseURL` plus a `services.<service>` path
