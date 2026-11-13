@@ -1,3 +1,38 @@
+
+## 0.7.0 - 2026-11-05
+
+### Added
+- Add auth token to print the access token
+
+
+
+## 0.6.1 - 2026-10-30
+
+### Fixed
+- Print usage only for usage errors and add API exit codes
+
+
+
+## 0.6.0 - 2026-10-29
+
+### Added
+- Add --replace-prices to the seed command
+
+
+
+## 0.5.1 - 2026-10-29
+
+### Fixed
+- Retry on rate limits and cut the seed's request count
+
+
+
+## 0.5.0 - 2026-10-29
+
+### Added
+- Add the entitlements seed command
+
+
 ## Unreleased
 
 No changes yet.

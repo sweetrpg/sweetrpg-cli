@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"os"
 	"os/exec"
@@ -116,7 +117,41 @@ var authLogoutCmd = &cobra.Command{
 	},
 }
 
+// resolveAuthToken builds the token source for `auth token`. A var so tests need no keychain.
+var resolveAuthToken = func() (func(context.Context) (string, error), error) {
+	cfg, err := resolveAuthConfig()
+	if err != nil {
+		return nil, err
+	}
+	source := &auth.SessionSource{Cfg: cfg, HTTP: &http.Client{Timeout: 15 * time.Second}, Store: auth.KeyringStore{}}
+	return source.Token, nil
+}
+
+var authTokenCmd = &cobra.Command{
+	Use:   "token",
+	Short: "Print the current access token",
+	Long: "Print a valid access token for the logged-in user to stdout, refreshing it when it has\n" +
+		"expired. For scripts that need to call a platform API as you, for example\n" +
+		"ADMIN_BEARER_TOKEN=\"$(sweetrpg auth token)\". Treat the output as a password.\n" +
+		"Not logged in: prints nothing and exits 3.",
+	Args: cobra.NoArgs,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		tokens, err := resolveAuthToken()
+		if err != nil {
+			return err
+		}
+		token, err := tokens(cmd.Context())
+		if err != nil {
+			return authExit(err)
+		}
+		// cmd.Println would go to stderr when no writer is set; the token must reach stdout.
+		_, err = fmt.Fprintln(cmd.OutOrStdout(), token)
+		return err
+	},
+}
+
 func init() {
+	authCmd.AddCommand(authTokenCmd)
 	authCmd.AddCommand(authLoginCmd)
 	authCmd.AddCommand(authLogoutCmd)
 	rootCmd.AddCommand(authCmd)

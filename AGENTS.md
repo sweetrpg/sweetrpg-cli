@@ -10,7 +10,8 @@ authenticated session (Auth0 device flow, keychain-stored refresh token) works a
 command namespace: `catalog` covers basic CRUD across catalog entity types (volume, publisher,
 studio, person, system, license, review, contribution), relationship linking/unlinking, and
 cover/sample asset upload against assets-web; `api` is a generic authenticated HTTP passthrough
-against any configured service; `game-room import dtrpg` populates a user's own Game Room library
+against any configured service; `entitlements seed` loads an entitlements-api catalog seed (files supplied by the caller) through
+its admin API; `game-room import dtrpg` populates a user's own Game Room library
 from their DriveThruRPG account. It talks to each service's existing HTTP API only - no backend
 changes.
 
