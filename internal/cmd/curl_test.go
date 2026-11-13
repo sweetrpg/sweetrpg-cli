@@ -184,3 +184,52 @@ func TestIsCurlExitSurvivesWrapping(t *testing.T) {
 		t.Error("wrapped sentinel must still match")
 	}
 }
+
+// runAPIPreview runs `sweetrpg <args>` through the real root command with --curl and returns what
+// it printed.
+func runAPIPreview(t *testing.T, args ...string) string {
+	t.Helper()
+	oldDomain, oldClientID, oldAudience := auth.Domain, auth.ClientID, auth.Audience
+	auth.Domain, auth.ClientID, auth.Audience = "", "", ""
+	t.Cleanup(func() { auth.Domain, auth.ClientID, auth.Audience = oldDomain, oldClientID, oldAudience })
+	resetResolveState(t)
+	oldURL, oldService := flagAPIURL, flagAPIService
+	t.Cleanup(func() { flagAPIURL, flagAPIService = oldURL, oldService; rootCmd.SetArgs(nil); _ = rootCmd.PersistentFlags().Set("curl", "false") })
+	flagAPIURL = "" // an earlier test may have left a value; each run starts from the flag's default
+	rootCmd.SetArgs(args)
+	var runErr error
+	out := runCaptured(t, func() { runErr = Execute() })
+	if runErr != nil {
+		t.Fatalf("run %v: %v", args, runErr)
+	}
+	return out
+}
+
+func TestAPIURLOverridesTheTargetedService(t *testing.T) {
+	for _, svc := range []string{"auth", "game-room", "users", "catalog"} {
+		t.Run(svc, func(t *testing.T) {
+			out := runAPIPreview(t, "--api-url", "http://127.0.0.1:18000", "--yes", "--curl", "api", "GET", "/ping", "--service", svc)
+			if !strings.Contains(out, "'http://127.0.0.1:18000/ping'") {
+				t.Errorf("--api-url ignored for %s, output:\n%s", svc, out)
+			}
+		})
+	}
+}
+
+func TestAPIWithoutURLFlagUsesTheServiceDefault(t *testing.T) {
+	t.Setenv("SWEETRPG_AUTH_API_URL", "http://127.0.0.1:18001")
+	out := runAPIPreview(t, "--yes", "--curl", "api", "GET", "/ping", "--service", "auth")
+	if !strings.Contains(out, "'http://127.0.0.1:18001/ping'") {
+		t.Errorf("env URL not used without --api-url, output:\n%s", out)
+	}
+}
+
+func TestAPIRejectsABadServiceName(t *testing.T) {
+	c := newTestAPICommand(t)
+	if err := c.Flags().Set("service", "Bad Name"); err != nil {
+		t.Fatal(err)
+	}
+	if err := runAPI(c, []string{"/x"}); err == nil || !strings.Contains(err.Error(), "not a service name") {
+		t.Fatalf("err = %v, want a service-name usage error", err)
+	}
+}
