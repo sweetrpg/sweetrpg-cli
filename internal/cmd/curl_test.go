@@ -194,7 +194,11 @@ func runAPIPreview(t *testing.T, args ...string) string {
 	t.Cleanup(func() { auth.Domain, auth.ClientID, auth.Audience = oldDomain, oldClientID, oldAudience })
 	resetResolveState(t)
 	oldURL, oldService := flagAPIURL, flagAPIService
-	t.Cleanup(func() { flagAPIURL, flagAPIService = oldURL, oldService; rootCmd.SetArgs(nil); _ = rootCmd.PersistentFlags().Set("curl", "false") })
+	t.Cleanup(func() {
+		flagAPIURL, flagAPIService = oldURL, oldService
+		rootCmd.SetArgs(nil)
+		_ = rootCmd.PersistentFlags().Set("curl", "false")
+	})
 	flagAPIURL = "" // an earlier test may have left a value; each run starts from the flag's default
 	rootCmd.SetArgs(args)
 	var runErr error
