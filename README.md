@@ -87,6 +87,11 @@ shared across every command namespace (`catalog`, `api`, `game-room`, ...) - one
 of them. Tokens are stored in your OS keychain under service name `sweetrpg-cli`; access tokens
 refresh automatically. `auth logout` removes them. Auth failures exit with code 3.
 
+`sweetrpg auth token` prints the current access token to stdout (refreshing it if needed) for
+scripts that call a platform API as you, for example `ADMIN_BEARER_TOKEN="$(sweetrpg auth token)"`.
+It prints nothing and exits 3 when you are not logged in. Treat the output as a password; `--curl`
+previews still redact it.
+
 Reads don't require a login: `catalog view` (and name resolution it performs) hits public
 endpoints and works with no stored session. Writes (`add`, `edit`, `delete`, `link`, `unlink`)
 require one.
@@ -217,6 +222,40 @@ because no catalog volume matches yet (with their titles), so you understand why
 DriveThruRPG library may not fully populate your Game Room library. `game-room import dtrpg
 logout` deletes the stored key.
 
+## Loading the entitlements catalog
+
+`entitlements seed` loads a catalog seed file through entitlements-api's admin API, as you (your
+session's access token is the bearer, so the service's admin role check applies). The seed and
+price files live in the entitlements-api repo (`seed/initiative.json`, `seed/prices.dev.json`);
+the CLI embeds no catalog data.
+
+```bash
+sweetrpg entitlements seed --file seed/initiative.json --prices seed/prices.dev.json --dry-run
+sweetrpg entitlements seed --file seed/initiative.json --prices seed/prices.dev.json
+```
+
+It only creates what is missing: an existing key, tier, or product is left as it is, and an
+already-set default tier is kept. `--prices` sets a Stripe price ID only where a product has none;
+a different existing price is reported as `skipped`. To correct a wrong price ID, put the right
+one in the overlay and add `--replace-prices`: it swaps only that product's price ID (everything
+else on the product is sent back unchanged), and `--dry-run` prints `would replace price <id>
+(<old> -> <new>)` first.
+
+```bash
+echo '{"products": {"members-10": "price_..."}}' > /tmp/fix-prices.json
+sweetrpg entitlements seed --file seed/initiative.json --prices /tmp/fix-prices.json --replace-prices --dry-run
+sweetrpg entitlements seed --file seed/initiative.json --prices /tmp/fix-prices.json --replace-prices
+``` The service URL comes from
+`SWEETRPG_ENTITLEMENTS_API_URL` or `services.entitlements` in the config file (default path
+`/api/0/entitlements`). `--curl` is not supported here because later requests depend on earlier
+responses.
+
+The service rate-limits admin routes per client (30 requests per 60 seconds by default). The
+command reads what exists with four list calls, then sends only the writes that are needed (a full
+first load is 25 requests; a re-run on a loaded service is 4), pauses `--delay` (default 300ms)
+between requests, and on HTTP 429 waits and retries with backoff, honoring `Retry-After` when the
+service sends it, up to 6 retries, printing a note each time it waits.
+
 ## `sweetrpg api`: generic authenticated requests
 
 For endpoints the typed `catalog` commands don't cover, `api` sends an authenticated request
@@ -238,7 +277,17 @@ defaults to `GET` with no body, `POST` when `--field`/`--raw-field` is present. 
 - Pass `--yes` to skip all interactive prompts; ambiguous name resolutions then fail instead of prompting. Deletes additionally require `--force` when stdin is not a TTY - `--yes` alone never deletes in a script.
 - Use `catalog view <type> <id> --json` for machine-readable output.
 - Pass `--curl` to print the equivalent cURL command(s) instead of calling the API. Nothing is sent; the bearer token is printed as `<redacted>`. Flows that need server data to continue (name resolution feeding later requests) stop after their first request, so pass IDs instead of names to see write requests directly.
-- Exit codes: `0` success, `1` general error, `2` usage error, `3` authentication failure.
+- Results and API response bodies go to stdout; the one-line error goes to stderr. Usage text is printed (after the error) only for usage errors, never when a valid call fails at runtime.
+- Exit codes:
+
+| Code | Meaning |
+| --- | --- |
+| `0` | Success |
+| `1` | General runtime error (network failure, unreadable config, anything not below) |
+| `2` | Usage error: bad or missing flag or argument, unknown command, input the CLI rejects |
+| `3` | Authentication: not logged in, session expired, or the API answered 401 |
+| `4` | The API answered with a client error (4xx other than 401), e.g. 403, 404, 409 `confirmation_required`, 429 after retries |
+| `5` | The API answered with a server error (5xx) |
 
 ## Shell Completion
 
