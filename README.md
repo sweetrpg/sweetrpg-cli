@@ -180,6 +180,17 @@ by URL. Publisher names resolve case-insensitively to existing publisher records
 on a miss. Re-runs are idempotent - a product whose `dtrpg_product_id` already appears on a
 volume is skipped.
 
+**Existing volumes are adopted, not duplicated.** When no volume carries a product's ID, the
+import looks for exactly one volume with the same normalized title and publisher and no
+`dtrpg_product_id`. Normalizing means Unicode NFKC, case folding, and collapsing punctuation and
+whitespace, so "A Glorious Death!" matches "a glorious death". One match is adopted: the volume
+gains the product ID and, if it has none, the cover; its title, description, tags, and existing
+cover are left alone. No match creates a volume. Two or more matches create nothing and are
+listed as ambiguous in the plan and summary for a person to resolve. Two products wanting the
+same volume are both reported as ambiguous. Adoption uses `PATCH /volumes/:id` with your own
+token, so it needs an editor or admin role: catalog-api rejects a property change from a
+submitter with a 400, which the import reports as a failed product.
+
 `catalog import dtrpg library` is meant to be run by an admin or editor: created volumes,
 publishers, and cover links land as **live records**, not review-queue submissions - a bulk
 import can create hundreds or thousands of records, and routing all of that through review would
@@ -190,8 +201,8 @@ documented here.
 
 Flags:
 
-- `--dry-run` - fetch the library and print the plan (to import / already imported / skipped)
-  without any write.
+- `--dry-run` - fetch the library and print the plan (to import / adopt / ambiguous / already
+  imported / skipped), naming each volume that would be adopted, without any write.
 - `--include-archived` - also import products whose DriveThruRPG files are archived (skipped by
   default).
 - `--page-size` - DriveThruRPG retrieval page size; `0` uses the server default.

@@ -11,6 +11,7 @@ require (
 	github.com/sweetrpg/catalog-objects.go v0.6.0
 	github.com/sweetrpg/model-core.go v0.1.0
 	github.com/zalando/go-keyring v0.2.8
+	golang.org/x/text v0.44.0
 	gopkg.in/yaml.v3 v3.0.1
 )
 

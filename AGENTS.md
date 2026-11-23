@@ -15,6 +15,18 @@ its admin API; `game-room import dtrpg` populates a user's own Game Room library
 from their DriveThruRPG account. It talks to each service's existing HTTP API only - no backend
 changes.
 
+## DTRPG Library Import Matching
+
+`catalog import dtrpg library` (`internal/cmd/import_library.go`, `import_adopt.go`) matches a
+product to an existing volume in this order: `dtrpg_product_id` property (already imported,
+skip); else exactly one volume with the same normalized title and publisher and no product ID
+(adopt: PATCH the product ID and a missing cover, nothing else); else create. Two or more
+candidates are skipped and reported. Candidate lookup searches catalog-api with `filter[q]` on
+the title's longest word and compares normalized titles in Go; it never pages the whole
+catalog. Adoption goes through `PATCH /volumes/:id` with the user's own token and needs an
+editor or admin role (catalog-api rejects property changes from submitters). Don't add title,
+description, or tag overwrites to adoption.
+
 ## Dependencies
 
 Depends on `catalog-objects.go` for API value objects and on cobra (CLI framework),
