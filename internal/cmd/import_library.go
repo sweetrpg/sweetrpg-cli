@@ -106,6 +106,13 @@ func runDTRPGLibrary(cmd *cobra.Command, _ []string) error {
 	}
 
 	plan := planImport(products, known, flagImportArchived)
+	resolver := newPublisherResolver(cmd, c)
+	volumes := apiVolumes{c: c}
+	matches, err := planMatches(ctx, volumes, resolver.find, plan.toImport)
+	if err != nil {
+		return writeErr(err)
+	}
+	plan.toImport, plan.toAdopt, plan.ambiguous = matches.toCreate, matches.toAdopt, matches.ambiguous
 	printPlan(cmd, plan)
 
 	if flagImportDryRun {
@@ -113,7 +120,7 @@ func runDTRPGLibrary(cmd *cobra.Command, _ []string) error {
 		return nil
 	}
 
-	summary := executeImport(ctx, cmd, c, plan.toImport)
+	summary := executeImport(ctx, cmd, c, resolver, plan)
 	printSummary(cmd, plan, summary)
 	if summary.failed > 0 {
 		return &ExitError{Code: 1, Err: fmt.Errorf("%d product(s) failed to import", summary.failed)}
@@ -145,6 +152,8 @@ func importedProductIDs(ctx context.Context, c *client.Client) (map[string]bool,
 
 type importPlan struct {
 	toImport        []dtrpg.Product
+	toAdopt         []adoption
+	ambiguous       []ambiguity
 	alreadyImported []dtrpg.Product
 	skippedArchived []dtrpg.Product
 }
@@ -168,21 +177,40 @@ func planImport(products []dtrpg.Product, known map[string]bool, includeArchived
 
 type importSummary struct {
 	imported       int
+	adopted        int
 	failed         int
 	failures       []string
 	coversAttached int
 	coversSkipped  int
 }
 
-func executeImport(ctx context.Context, cmd *cobra.Command, c *client.Client, products []dtrpg.Product) importSummary {
-	resolver := newPublisherResolver(cmd, c)
+func executeImport(ctx context.Context, cmd *cobra.Command, c *client.Client, resolver *publisherResolver, plan importPlan) importSummary {
 	assets, assetsErr := buildAssetsClient()
 	if assetsErr != nil {
 		cmd.Printf("  covers disabled: %v\n", assetsErr)
 	}
 
 	var s importSummary
-	for _, prod := range products {
+	for _, a := range plan.toAdopt {
+		logNormal(cmd, "  adopting %s as volume %s...\n", a.prod.Title, a.volume.ID)
+		if err := adoptVolume(ctx, apiVolumes{c: c}, a); err != nil {
+			s.failed++
+			s.failures = append(s.failures, fmt.Sprintf("%s: adopting volume %s: %v", a.prod.Title, a.volume.ID, err))
+			cmd.Printf("  failed   %s (adopting volume %s: %v)\n", a.prod.Title, a.volume.ID, err)
+			continue
+		}
+		s.adopted++
+		logNormal(cmd, "  adopted  %s\n", a.prod.Title)
+		if a.volume.CoverAssetId != "" || assetsErr != nil {
+			continue
+		}
+		if attachCover(ctx, cmd, c, assets, a.volume.ID, a.prod) {
+			s.coversAttached++
+		} else {
+			s.coversSkipped++
+		}
+	}
+	for _, prod := range plan.toImport {
 		logNormal(cmd, "  processing %s...\n", prod.Title)
 
 		volumeID, err := importOne(ctx, c, resolver, prod)
@@ -305,6 +333,15 @@ func (r *publisherResolver) load(ctx context.Context) error {
 	return nil
 }
 
+// find returns the existing publisher ID for name, never creating one.
+func (r *publisherResolver) find(ctx context.Context, name string) (string, bool, error) {
+	if err := r.load(ctx); err != nil {
+		return "", false, err
+	}
+	id, ok := r.byName[strings.ToLower(strings.TrimSpace(name))]
+	return id, ok, nil
+}
+
 func (r *publisherResolver) resolve(ctx context.Context, name string) (string, error) {
 	if err := r.load(ctx); err != nil {
 		return "", err
@@ -324,10 +361,22 @@ func (r *publisherResolver) resolve(ctx context.Context, name string) (string, e
 }
 
 func printPlan(cmd *cobra.Command, plan importPlan) {
-	cmd.Printf("Plan: %d to import, %d already imported, %d skipped (archived)\n",
-		len(plan.toImport), len(plan.alreadyImported), len(plan.skippedArchived))
+	cmd.Printf("Plan: %d to import, %d to adopt, %d ambiguous, %d already imported, %d skipped (archived)\n",
+		len(plan.toImport), len(plan.toAdopt), len(plan.ambiguous), len(plan.alreadyImported), len(plan.skippedArchived))
 	printSample(cmd, "to import", plan.toImport)
+	printAdoptions(cmd, plan)
 	printSample(cmd, "skipped (archived)", plan.skippedArchived)
+}
+
+// printAdoptions lists every adoption and ambiguous skip in full, not sampled: each one is a
+// decision about an existing record, so a dry run has to show all of them.
+func printAdoptions(cmd *cobra.Command, plan importPlan) {
+	for _, a := range plan.toAdopt {
+		cmd.Printf("  adopt: %q -> existing volume %s\n", a.prod.Title, a.volume.ID)
+	}
+	for _, a := range plan.ambiguous {
+		cmd.Printf("  ambiguous (skipped): %q matches volumes %s\n", a.prod.Title, strings.Join(a.volumeIDs, ", "))
+	}
 }
 
 func printSample(cmd *cobra.Command, label string, products []dtrpg.Product) {
@@ -346,8 +395,8 @@ func printSample(cmd *cobra.Command, label string, products []dtrpg.Product) {
 }
 
 func printSummary(cmd *cobra.Command, plan importPlan, s importSummary) {
-	cmd.Printf("Done: %d imported, %d already imported, %d skipped (archived), %d failed\n",
-		s.imported, len(plan.alreadyImported), len(plan.skippedArchived), s.failed)
+	cmd.Printf("Done: %d imported, %d adopted, %d ambiguous (skipped), %d already imported, %d skipped (archived), %d failed\n",
+		s.imported, s.adopted, len(plan.ambiguous), len(plan.alreadyImported), len(plan.skippedArchived), s.failed)
 	cmd.Printf("Covers: %d attached, %d skipped\n", s.coversAttached, s.coversSkipped)
 	for _, f := range s.failures {
 		cmd.Printf("  failed: %s\n", f)
