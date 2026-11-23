@@ -1,4 +1,11 @@
 
+## 0.9.0 - 2026-11-23
+
+### Added
+- Adopt matching legacy volumes instead of duplicating them
+
+
+
 ## 0.8.0 - 2026-11-13
 
 ### Added
