@@ -8,7 +8,7 @@ require (
 	github.com/pilgrimagesoftware/dtrpg-sdk.go v0.1.0
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.1.0
-	github.com/sweetrpg/catalog-objects.go v0.6.0
+	github.com/sweetrpg/catalog-objects.go v0.6.1
 	github.com/sweetrpg/model-core.go v0.1.0
 	github.com/zalando/go-keyring v0.2.8
 	golang.org/x/text v0.44.0
